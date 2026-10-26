@@ -63,7 +63,8 @@ export function Expandable({
   return (
     <Animated.View
       pointerEvents={expanded ? "auto" : "none"}
-      accessible={expanded}
+      aria-hidden={!expanded}
+      importantForAccessibility={expanded ? "auto" : "no-hide-descendants"}
       style={{
         height: progress.interpolate({ inputRange: [0, 1], outputRange: [0, limit] }),
         opacity: progress,
@@ -128,12 +129,15 @@ export function PressableCard({
   onPress,
   accessibilityLabel,
   accessibilityState,
+  expanded,
   children,
   style,
 }: {
   onPress: () => void;
   accessibilityLabel?: string;
   accessibilityState?: { expanded?: boolean; selected?: boolean };
+  /** Rendered as aria-expanded; accessibilityState alone is not mapped by react-native-web. */
+  expanded?: boolean;
   children: React.ReactNode;
   style?: ViewStyle;
 }) {
@@ -142,6 +146,7 @@ export function PressableCard({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={accessibilityState}
+      {...(expanded !== undefined ? { "aria-expanded": expanded } : {})}
       onPress={onPress}
       style={({ pressed }) => [
         ui.pressCard,

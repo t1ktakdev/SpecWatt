@@ -96,6 +96,7 @@ export function HelpCenterScreen() {
               key={article.id}
               accessibilityLabel={article.title[locale]}
               accessibilityState={{ expanded: open }}
+              expanded={open}
               onPress={() => setOpenId(open ? null : article.id)}
               style={open ? { borderColor: theme.peach } : undefined}
             >
