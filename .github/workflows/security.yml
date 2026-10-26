@@ -1,0 +1,98 @@
+name: Security gates
+
+# Independent security quality gate for pull requests. Runs only local,
+# in-process checks: no secrets required, no hardware, no external targets.
+# Existing CI is not modified (this file is additive).
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-and-security-tests:
+    name: Security test suite (unittest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements-dev.txt
+            security/requirements-tools.txt
+      - name: Install dependencies
+        run: python -m pip install -r security/requirements-tools.txt
+      - name: Upstream backend tests
+        working-directory: backend
+        run: python -m unittest discover -s tests -v
+      - name: Security & reliability suite
+        run: python -m unittest discover -s security -v
+
+  static-analysis:
+    name: Bandit (SAST)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install bandit
+        run: python -m pip install bandit==1.9.4
+      # -ll fails only on Medium+ findings; the known Low B105 token-type
+      # label stays visible but non-blocking.
+      - name: Scan backend
+        run: python -m bandit -r backend/specwatt_api -ll -q
+
+  python-dependency-audit:
+    name: pip-audit (backend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install pip-audit
+        run: python -m pip install pip-audit==2.10.1
+      - name: Audit pinned backend requirements
+        run: pip-audit -r backend/requirements.txt --no-deps
+
+  secret-scan:
+    name: Secret scan (worktree + history)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for the --history pass
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Scan tracked files
+        run: python security/scan_secrets.py
+      - name: Scan full history
+        run: python security/scan_secrets.py --history
+
+  mobile-dependency-audit:
+    name: npm audit baseline gate (mobile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/specwatt-app/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install mobile dependencies
+        working-directory: mobile/specwatt-app
+        run: npm ci
+      - name: Run npm audit
+        working-directory: mobile/specwatt-app
+        run: npm audit --json > "${{ github.workspace }}/npm-audit.json"
+      - name: Compare against reviewed baseline
+        run: python security/check_npm_audit.py npm-audit.json
