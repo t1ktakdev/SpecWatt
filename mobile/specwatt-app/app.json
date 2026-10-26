@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "SpecWATT",
+    "slug": "specwatt",
+    "version": "0.2.0",
+    "orientation": "portrait",
+    "icon": "./assets/specwatt/icon.png",
+    "scheme": "specwatt",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "kg.specwatt.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#1D201C",
+        "foregroundImage": "./assets/specwatt/icon.png"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1D201C",
+          "image": "./assets/specwatt/splash.png",
+          "imageWidth": 170
+        }
+      ],
+      "expo-secure-store",
+      "expo-build-properties"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
