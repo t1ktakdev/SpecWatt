@@ -165,7 +165,7 @@ def migrate(path):
             CREATE TABLE IF NOT EXISTS schedules (
                 id TEXT PRIMARY KEY,
                 controller_id TEXT NOT NULL REFERENCES controllers(id),
-                channel_id TEXT NOT NULL CHECK(channel_id IN ('CH1','CH2','CH3')),
+                channel_id TEXT NOT NULL CHECK(channel_id IN ('CH1','CH2')),
                 action TEXT NOT NULL CHECK(action IN ('on','off')),
                 start_at REAL NOT NULL, end_at REAL NOT NULL,
                 priority INTEGER NOT NULL DEFAULT 0,

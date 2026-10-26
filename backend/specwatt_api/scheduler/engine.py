@@ -93,16 +93,20 @@ def controller_forecast(channels: list, active_schedules: list, plan: dict | Non
     ordered = sorted(bounds)
     merged: list[Segment] = []
     for start, end in zip(ordered, ordered[1:]):
-        watts = 0.0
+        watts, forecast_active = 0.0, False
         for segments in per_channel.values():
             for s in segments:
                 if s.start <= start < s.end:
                     watts += s.watts
+                    forecast_active = forecast_active or s.basis == BASIS_FORECAST
                     break
-        if merged and merged[-1].watts == watts:
+        basis = BASIS_FORECAST if forecast_active else BASIS_MEASURED
+        source = SOURCE_SCHEDULE if forecast_active else SOURCE_STATE
+        # Coalesce only full matches so a basis transition stays visible.
+        if merged and merged[-1].watts == watts and merged[-1].basis == basis:
             merged[-1] = Segment(merged[-1].start, end, watts, merged[-1].basis, merged[-1].source)
         else:
-            merged.append(Segment(start, end, watts, BASIS_FORECAST, SOURCE_SCHEDULE))
+            merged.append(Segment(start, end, watts, basis, source))
     return merged
 
 
@@ -171,14 +175,15 @@ def evaluate_plan(channels: list, active_schedules: list, controller, plan: dict
         checks.append({'code': code, 'ok': bool(ok), **({'detail': detail} if detail else {})})
 
     check('protected_channel', not channel['protected'])
-    check('automation_not_allowed', plan['action'] == 'off' or bool(channel['allow_auto']))
+    # These mirror command_rejection exactly (order included) so a plan the
+    # engine accepts cannot be rejected for a guard reason at dispatch time:
+    # both actions are actuation and need fresh measurements plus consent.
+    fresh = (not controller['uncertain']) and 0 <= now - controller['measured_at'] <= FRESH_SECONDS
+    check('stale_measurements', fresh)
+    check('automation_not_allowed', bool(channel['allow_auto']))
     check('manual_priority_active', not (plan['action'] == 'on' and float(channel['manual_until']) > window[0]))
     check('window_in_past', window[0] > now)
     check('window_too_far', window[0] - now <= MAX_HORIZON_SECONDS)
-    # An 'on' plan needs a power forecast: stale or uncertain measurements make
-    # one groundless. Turning off needs no forecast and stays allowed.
-    fresh = (not controller['uncertain']) and 0 <= now - controller['measured_at'] <= FRESH_SECONDS
-    check('stale_measurements', plan['action'] == 'off' or fresh)
     conflicts = [s for s in active_schedules
                  if s['channel_id'] == plan['channel_id'] and overlaps(window, (s['start_at'], s['end_at']))]
     check('schedule_conflict', not conflicts, schedule_ids=sorted(s['id'] for s in conflicts))

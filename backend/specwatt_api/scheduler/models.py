@@ -2,10 +2,11 @@
 
 All timestamps are Unix epoch seconds in UTC, matching the existing API
 contract. Every response model carries ``source='simulator'`` like the rest of
-the service. Input models inherit the strict ``Input`` base from ``app.py``
+the service. Input models inherit the strict ``Input`` base from ``base.py``
 (unknown fields rejected, no type coercion).
 """
 from enum import Enum
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 
@@ -32,14 +33,9 @@ class ScheduleStatus(str, Enum):
     UNCERTAIN = 'uncertain'      # результат команды неоднозначен (timeout / transport-error)
 
 
-class ScheduleAction(str, Enum):
-    ON = 'on'    # работа в окне [start_at, end_at]: включить в начале, выключить в конце
-    OFF = 'off'  # одиночное выключение в момент start_at
-
-
 class ScheduleCreate(Input):
     channel_id: str
-    action: ScheduleAction
+    action: Literal['on', 'off']
     start_at: float = Field(allow_inf_nan=False)
     duration_seconds: float | None = Field(default=None, ge=MIN_DURATION_SECONDS, allow_inf_nan=False)
     priority: int = Field(default=0, ge=0, le=100)
@@ -54,7 +50,7 @@ class ScheduleCreate(Input):
 
     @model_validator(mode='after')
     def duration_rules(self):
-        if self.action == ScheduleAction.ON:
+        if self.action == 'on':
             if self.duration_seconds is None:
                 raise ValueError('duration_required_for_on')
         elif self.duration_seconds is not None:
@@ -73,7 +69,7 @@ class ScheduleUpdate(Input):
 class ScheduleEvaluate(Input):
     """A hypothetical plan; evaluated without creating anything."""
     channel_id: str
-    action: ScheduleAction
+    action: Literal['on', 'off']
     start_at: float = Field(allow_inf_nan=False)
     duration_seconds: float | None = Field(default=None, ge=MIN_DURATION_SECONDS, allow_inf_nan=False)
     priority: int = Field(default=0, ge=0, le=100)
@@ -87,7 +83,7 @@ class ScheduleEvaluate(Input):
 
     @model_validator(mode='after')
     def duration_rules(self):
-        if self.action == ScheduleAction.ON:
+        if self.action == 'on':
             if self.duration_seconds is None:
                 raise ValueError('duration_required_for_on')
         elif self.duration_seconds is not None:
@@ -95,8 +91,8 @@ class ScheduleEvaluate(Input):
         return self
 
 
-def plan_window(action: ScheduleAction, start_at: float, duration_seconds: float | None) -> tuple[float, float]:
+def plan_window(action: str, start_at: float, duration_seconds: float | None) -> tuple[float, float]:
     """Return the (start, end) of the plan; an ``off`` action is instantaneous."""
-    if action == ScheduleAction.ON:
+    if action == 'on':
         return start_at, start_at + float(duration_seconds)
     return start_at, start_at

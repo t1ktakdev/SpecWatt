@@ -25,7 +25,7 @@ command insert, so a schedule can never dispatch a phase twice.
 """
 from ..app import event, issue_command
 from . import store
-from .models import MAX_LATE_OFF_SECONDS, ScheduleAction, ScheduleStatus
+from .models import MAX_LATE_OFF_SECONDS, ScheduleStatus
 
 _ACTIVE = (ScheduleStatus.PENDING.value, ScheduleStatus.RUNNING.value, ScheduleStatus.UNCERTAIN.value)
 
@@ -44,7 +44,7 @@ def _dispatch_start(db, controller, schedule, now) -> dict:
     """Try to issue the start-phase command for a due pending schedule."""
     cid = controller['id']
     end_at = float(schedule['end_at'])
-    if schedule['action'] == ScheduleAction.ON.value:
+    if schedule['action'] == 'on':
         if now > end_at:
             # The whole window passed while the schedule waited (e.g. server
             # downtime): acting now would violate the owner's intent.
@@ -59,7 +59,7 @@ def _dispatch_start(db, controller, schedule, now) -> dict:
         event(db, cid, 'schedule.rejected', schedule['channel_id'], schedule['id'], 'window_missed', now)
         return _record(schedule, 'rejected', reason='window_missed')
 
-    on = schedule['action'] == ScheduleAction.ON.value
+    on = schedule['action'] == 'on'
     command, rejection = issue_command(db, controller, schedule['channel_id'], on, 'schedule',
                                        _phase_key(schedule['id'], 'start'), now)
     if rejection == 'command_in_flight':
@@ -140,7 +140,7 @@ def _advance(db, controller, schedule, now) -> dict:
 
     if schedule['phase'] == 'end':
         return _complete(db, controller, schedule, now)
-    if schedule['action'] == ScheduleAction.OFF.value:
+    if schedule['action'] == 'off':
         return _complete(db, controller, schedule, now)
     if now < float(schedule['end_at']):
         # Start confirmed; closing off happens when the window ends.

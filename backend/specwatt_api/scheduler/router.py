@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException
 
 from ..app import command_json, connect, event, owned, snapshot
 from . import engine, runner, store
-from .models import (MAX_HORIZON_SECONDS, MIN_DURATION_SECONDS, ScheduleAction, ScheduleCreate,
+from .models import (MAX_HORIZON_SECONDS, MIN_DURATION_SECONDS, ScheduleCreate,
                      ScheduleEvaluate, ScheduleStatus, ScheduleUpdate, plan_window)
 
 _TERMINAL_STATUSES = {ScheduleStatus.COMPLETED.value, ScheduleStatus.CANCELLED.value,
@@ -25,7 +25,7 @@ def register_scheduler_routes(app, path: str, clock, user_dependency):
 
     def plan_of(payload) -> dict:
         start, end = plan_window(payload.action, payload.start_at, payload.duration_seconds)
-        return {'channel_id': payload.channel_id, 'action': payload.action.value,
+        return {'channel_id': payload.channel_id, 'action': payload.action,
                 'start_at': start, 'end_at': end, 'priority': getattr(payload, 'priority', 0)}
 
     def rejection_response(evaluation: dict):
@@ -94,7 +94,7 @@ def register_scheduler_routes(app, path: str, clock, user_dependency):
                 raise HTTPException(404, detail={'code': 'schedule_not_found'})
             if row['status'] != ScheduleStatus.PENDING.value:
                 raise HTTPException(409, detail={'code': 'schedule_not_modifiable'})
-            if row['action'] == ScheduleAction.OFF.value and payload.duration_seconds is not None:
+            if row['action'] == 'off' and payload.duration_seconds is not None:
                 raise HTTPException(422, detail={'code': 'duration_not_allowed_for_off'})
             plan = store.plain(row)
             plan['priority'] = payload.priority if payload.priority is not None else row['priority']
