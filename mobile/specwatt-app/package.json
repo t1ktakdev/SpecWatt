@@ -46,7 +46,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs src/features/rooms/tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "export:android": "expo export --platform android --output-dir dist-android-v6",
     "export:web": "expo export --platform web --output-dir dist-web-v6"

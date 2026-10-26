@@ -4,6 +4,11 @@ import { router } from "expo-router";
 import { Copy, Photo } from "../specwatt/ui";
 import { useSpec, totalPower, Channel } from "../specwatt/store";
 import { imageMap } from "../specwatt/images";
+// Rooms & Spaces module (feature/rooms-spaces): additive integration —
+// entry point + provider-free room filter. Everything else lives in
+// src/features/rooms and the /rooms routes.
+import { RoomFilterChips, RoomsEntryCard } from "../features/rooms/components";
+import { deviceRoom } from "../features/rooms/power";
 import {
   Shell,
   Header,
@@ -135,9 +140,14 @@ export function HomeScreen() {
 export function DevicesScreen() {
   const { data } = useSpec();
   const [filter, setFilter] = useState(0);
+  const [room, setRoom] = useState<string | null>(null);
   const w = useWords();
+  const roomNames = [
+    ...new Set(data.channels.map((c) => deviceRoom(c.assigned)).filter(Boolean)),
+  ];
   const channels = data.channels.filter((c) =>
-    filter === 1 ? (c.watts ?? 0) > 0 : filter === 2 ? c.protected : true,
+    (!room || deviceRoom(c.assigned) === room) &&
+    (filter === 1 ? (c.watts ?? 0) > 0 : filter === 2 ? c.protected : true),
   );
   return (
     <Shell active="/devices">
@@ -150,6 +160,7 @@ export function DevicesScreen() {
         icon="plus"
         onPress={() => router.push("/setup")}
       />
+      <RoomsEntryCard />
       <Chips
         items={[
           w("Все", "Баары"),
@@ -159,6 +170,7 @@ export function DevicesScreen() {
         selected={filter}
         onSelect={setFilter}
       />
+      <RoomFilterChips items={roomNames} selected={room} onSelect={setRoom} />
       {channels.map((ch) => (
         <DeviceCard key={ch.id} channel={ch} />
       ))}
