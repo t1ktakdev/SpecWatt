@@ -7,7 +7,7 @@ never change existing response shapes.
 """
 from fastapi import Depends, HTTPException
 
-from ..app import command_json, connect, event, owned, snapshot
+from ..app import command_json, connect, event, owned, snapshot, transition
 from . import engine, runner, store
 from .models import (MAX_HORIZON_SECONDS, MIN_DURATION_SECONDS, ScheduleCreate,
                      ScheduleEvaluate, ScheduleStatus, ScheduleUpdate, plan_window)
@@ -126,6 +126,14 @@ def register_scheduler_routes(app, path: str, clock, user_dependency):
             if row['status'] in _TERMINAL_STATUSES:
                 raise HTTPException(409, detail={'code': 'schedule_not_active'})
             now = clock.now()
+            # A locally queued command has not been sent and can be retracted.
+            # Sent/acknowledged commands retain their own lifecycle; cancellation
+            # stops future phases and does not assert that the load is off.
+            if row['command_id']:
+                command = db.execute('SELECT * FROM commands WHERE id=? AND controller_id=?',
+                                     (row['command_id'], cid)).fetchone()
+                if command is not None and command['status'] == 'requested':
+                    transition(db, command, 'cancelled', 'schedule_cancelled', now)
             # A schedule must never execute after cancellation: the runner
             # only dispatches from statuses this update leaves behind, and
             # both statements share this transaction.
@@ -137,8 +145,8 @@ def register_scheduler_routes(app, path: str, clock, user_dependency):
     def tick(cid: str, uid=Depends(user)):
         """Process due schedules at the current app-clock time.
 
-        Explicit by design: no background thread exists, so dispatches are
-        reproducible and every caller sees exactly one synchronous pass.
+        Every caller sees exactly one synchronous pass. The optional worker
+        uses the same runner and transaction rules; it is disabled by default.
         """
         with connect(path) as db:
             db.execute('BEGIN IMMEDIATE')

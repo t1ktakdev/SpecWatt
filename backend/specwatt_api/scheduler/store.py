@@ -43,8 +43,7 @@ def list_schedules(db: sqlite3.Connection, controller_id: str, status: str | Non
 
 def active_schedules(db: sqlite3.Connection, controller_id: str) -> list:
     """Every pending/running/uncertain schedule, ascending by start (deterministic)."""
-    placeholders = ','.join('?' * len(ACTIVE_STATUSES))
-    return db.execute(f'SELECT * FROM schedules WHERE controller_id=? AND status IN ({placeholders}) '
+    return db.execute('SELECT * FROM schedules WHERE controller_id=? AND status IN (?,?,?) '
                       'ORDER BY start_at, created_at', (controller_id, *ACTIVE_STATUSES)).fetchall()
 
 
@@ -62,8 +61,15 @@ def create_schedule(db: sqlite3.Connection, controller_id: str, plan: dict, now:
 
 def update_schedule_fields(db: sqlite3.Connection, controller_id: str, schedule_id: str,
                            fields: dict, now: float):
+    # SQL identifiers cannot be bound. Accept only these internal column names;
+    # every value and owner/schedule identifier remains a bound parameter. This
+    # finite allowlist is also the justification for the B608 exclusion below.
+    allowed = {'start_at', 'end_at', 'priority', 'note', 'status', 'phase',
+               'command_id', 'rejection_reason', 'updated_at'}
+    if not fields or not set(fields).issubset(allowed):
+        raise ValueError('Unsupported schedule update fields')
     assignments = ', '.join(f'{name}=?' for name in fields)
-    db.execute(f'UPDATE schedules SET {assignments},updated_at=? WHERE controller_id=? AND id=?',
+    db.execute(f'UPDATE schedules SET {assignments},updated_at=? WHERE controller_id=? AND id=?',  # nosec B608
                (*fields.values(), now, controller_id, schedule_id))
 
 

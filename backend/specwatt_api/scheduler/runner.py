@@ -3,9 +3,9 @@
 The runner never sleeps and never spawns threads: each call to
 ``run_due_schedules`` is one synchronous pass over the controller's active
 schedules at the app clock's current time, inside a caller-owned
-``BEGIN IMMEDIATE`` transaction. Tests (and, later, an operator process)
-advance the clock and call the tick endpoint explicitly, which keeps every
-dispatch auditable and reproducible.
+``BEGIN IMMEDIATE`` transaction. Tests explicitly advance a virtual clock;
+the optional worker invokes the same pass using the configured app clock.
+Both paths keep every dispatch auditable and reproducible.
 
 State machine (see docs/SCHEDULER_DESIGN.md):
 
@@ -40,12 +40,19 @@ def _record(schedule, result, **extra) -> dict:
             'action': schedule['action'], 'phase': schedule['phase'], 'result': result, **extra}
 
 
+def _command_in_flight(db, cid):
+    # Caller owns BEGIN IMMEDIATE, so this check and the command insert cannot
+    # race another issuer. Do not consume the stable phase key on a deferral.
+    return db.execute("SELECT 1 FROM commands WHERE controller_id=? "
+                      "AND status IN ('requested','sent') LIMIT 1", (cid,)).fetchone() is not None
+
+
 def _dispatch_start(db, controller, schedule, now) -> dict:
     """Try to issue the start-phase command for a due pending schedule."""
     cid = controller['id']
     end_at = float(schedule['end_at'])
     if schedule['action'] == 'on':
-        if now > end_at:
+        if now >= end_at:
             # The whole window passed while the schedule waited (e.g. server
             # downtime): acting now would violate the owner's intent.
             store.set_status(db, cid, schedule['id'], ScheduleStatus.REJECTED.value, now,
@@ -59,9 +66,15 @@ def _dispatch_start(db, controller, schedule, now) -> dict:
         event(db, cid, 'schedule.rejected', schedule['channel_id'], schedule['id'], 'window_missed', now)
         return _record(schedule, 'rejected', reason='window_missed')
 
+    if _command_in_flight(db, cid):
+        return _record(schedule, 'deferred_command_in_flight')
     on = schedule['action'] == 'on'
     command, rejection = issue_command(db, controller, schedule['channel_id'], on, 'schedule',
                                        _phase_key(schedule['id'], 'start'), now)
+    if rejection is None and command['status'] == 'rejected':
+        # Older runners could persist a transient rejection under this stable
+        # key. Preserve history/idempotency; require a new explicit schedule.
+        rejection = 'previous_phase_rejected_' + (command['reason'] or 'unknown')
     if rejection == 'command_in_flight':
         # Transient by definition (one command resolves eventually); retry on
         # a later tick instead of failing the schedule.
@@ -91,6 +104,8 @@ def _reject(db, controller, schedule, reason, now) -> dict:
 
 
 def _go_uncertain(db, controller, schedule, now) -> dict:
+    if schedule['status'] == ScheduleStatus.UNCERTAIN.value:
+        return _record(schedule, 'uncertain')
     store.set_status(db, controller['id'], schedule['id'], ScheduleStatus.UNCERTAIN.value, now)
     event(db, controller['id'], 'schedule.uncertain', schedule['channel_id'], schedule['id'],
           schedule['command_id'], now)
@@ -103,8 +118,12 @@ def _dispatch_end(db, controller, schedule, now) -> dict:
     transient in-flight command defers it; other rejections are terminal and
     audited (documented limitation: an operator must then reconcile)."""
     cid = controller['id']
+    if _command_in_flight(db, cid):
+        return _record(schedule, 'deferred_command_in_flight')
     command, rejection = issue_command(db, controller, schedule['channel_id'], False, 'schedule',
                                        _phase_key(schedule['id'], 'end'), now)
+    if rejection is None and command['status'] == 'rejected':
+        rejection = 'previous_phase_rejected_' + (command['reason'] or 'unknown')
     if rejection == 'command_in_flight':
         return _record(schedule, 'deferred_command_in_flight')
     if rejection:
@@ -155,8 +174,7 @@ def run_due_schedules(db, controller, now) -> list[dict]:
     Returns one record per touched schedule, suitable for the tick response.
     """
     cid = controller['id']
-    placeholders = ','.join('?' * len(_ACTIVE))
-    rows = db.execute(f'SELECT * FROM schedules WHERE controller_id=? AND status IN ({placeholders}) '
+    rows = db.execute('SELECT * FROM schedules WHERE controller_id=? AND status IN (?,?,?) '
                       'ORDER BY start_at, created_at', (cid, *_ACTIVE)).fetchall()
     processed: list[dict] = []
     for row in rows:

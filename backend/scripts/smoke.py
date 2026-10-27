@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
@@ -18,7 +18,8 @@ def main():
         probe.bind(('127.0.0.1', 0))
         port = probe.getsockname()[1]
     with tempfile.TemporaryDirectory(prefix='specwatt-smoke-') as temp:
-        env = {**os.environ, 'SPECWATT_DB': str(Path(temp) / 'smoke.sqlite3')}
+        env = {**os.environ, 'SPECWATT_DB': str(Path(temp) / 'smoke.sqlite3'),
+               'SPECWATT_SCHEDULER_ENABLED': '0'}
         server = subprocess.Popen(
             [sys.executable, '-m', 'uvicorn', 'specwatt_api.app:create_app', '--factory',
              '--host', '127.0.0.1', '--port', str(port), '--log-level', 'error'],
@@ -53,6 +54,24 @@ def main():
             cid = call('POST', '/v1/controllers/simulator', {'name': 'Smoke simulator'})['id']
             path = '/v1/controllers/' + cid
             assert call('GET', path + '/snapshot')['total_watts'] == 4.2
+            # Exercise the merged scheduler contract over HTTP, including
+            # consent, protected-channel rejection and cancellation.
+            call('PATCH', path + '/channels/CH1/assignment', {
+                'name': 'Smoke lamp', 'room': 'Test', 'image': 'lamp', 'allow_auto': True})
+            plan = {'channel_id': 'CH1', 'action': 'on', 'start_at': time.time() + 60,
+                    'duration_seconds': 60}
+            evaluation = call('POST', path + '/scheduler/evaluate', plan)
+            assert evaluation['feasible'] is True
+            schedule = call('POST', path + '/schedules', plan)['schedule']
+            assert any(s['id'] == schedule['id'] for s in call('GET', path + '/schedules'))
+            assert call('POST', path + '/schedules/' + schedule['id'] + '/cancel')['status'] == 'cancelled'
+            assert call('POST', path + '/scheduler/tick', {})['processed'] == []
+            try:
+                call('POST', path + '/schedules', {**plan, 'channel_id': 'CH3'})
+            except HTTPError as error:
+                assert error.code == 409
+            else:
+                raise AssertionError('Protected CH3 schedule accepted')
             command = call('POST', path + '/commands', {
                 'channel_id': 'CH1', 'on': False, 'origin': 'manual', 'idempotency_key': 'smoke-command'})
             assert command['status'] == 'requested'
@@ -60,7 +79,7 @@ def main():
             assert call('POST', path + '/simulator/step', {})['snapshot']['total_watts'] == 2.4
             result = call('GET', path + '/commands/' + command['id'])
             assert [x['status'] for x in result['transitions']] == ['requested', 'sent', 'acknowledged']
-            print('PASS: real loopback HTTP register, owner simulator, 4.2W snapshot, request without state change, simulator acknowledgement, 2.4W snapshot; no physical transport.')
+            print('PASS: loopback HTTP authentication, scheduler evaluation/create/list/cancel/tick, CH3 rejection, command request without state change, explicit simulator acknowledgement; no physical transport.')
         finally:
             server.terminate()
             try:

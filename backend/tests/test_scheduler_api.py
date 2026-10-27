@@ -221,8 +221,11 @@ class SchedulerApiTests(unittest.TestCase):
         schedule = self.get_schedule(schedule_id)
         self.assertEqual(schedule['schedule']['status'], 'uncertain')
         # Authoritative telemetry resolves the ambiguity: the target was reached.
+        self.clock.advance(.001)
         telemetry = self.client.post(self.base + '/simulator/telemetry', headers=self.headers,
-                                     json={'channels': {'CH1': 1.8, 'CH2': 0, 'CH3': 2.4}})
+                                     json={'channels': {'CH1': 1.8, 'CH2': 0, 'CH3': 2.4},
+                                           'command_id': schedule['command']['id'],
+                                           'measured_at': self.clock.now(), 'sequence': 1})
         self.assertEqual(telemetry.status_code, 200)
         self.assertEqual([p['result'] for p in self.tick()['processed']], ['start_confirmed'])
         self.advance(1800)
@@ -239,8 +242,11 @@ class SchedulerApiTests(unittest.TestCase):
         self.advance(60)
         self.tick()
         self.step(outcome='transport-error')
+        self.clock.advance(.001)
         telemetry = self.client.post(self.base + '/simulator/telemetry', headers=self.headers,
-                                     json={'channels': {'CH1': 0, 'CH2': 0, 'CH3': 2.4}})
+                                     json={'channels': {'CH1': 0, 'CH2': 0, 'CH3': 2.4},
+                                           'command_id': self.get_schedule(schedule_id)['command']['id'],
+                                           'measured_at': self.clock.now(), 'sequence': 1})
         self.assertEqual(telemetry.status_code, 200)
         result = self.tick()['processed']
         self.assertEqual(result[0]['result'], 'rejected')
@@ -483,19 +489,8 @@ class SchedulerApiTests(unittest.TestCase):
     def test_v2_schema_rejects_status_tampering(self):
         schedule_id = self.schedule().json()['schedule']['id']
         with closing(sqlite3.connect(self.db)) as db:
-            import sys
-            print('DBG-A conn pragma journal:', db.execute('PRAGMA journal_mode').fetchone(),
-                  'user_version:', db.execute('PRAGMA user_version').fetchone(), file=sys.stderr)
-            print('DBG-A row via THIS conn:', db.execute('SELECT id,status FROM schedules').fetchall(), file=sys.stderr)
-            try:
+            with self.assertRaises(sqlite3.IntegrityError):
                 db.execute('UPDATE schedules SET status=?', ('invented',))
-            except Exception as exc:
-                import sqlite3 as s2, sys as sy
-                print('DBG-B type:', type(exc), 'module:', type(exc).__module__, file=sy.stderr)
-                print('DBG-B identity test-file sqlite3:', id(sqlite3), 'fresh import:', id(s2),
-                      'same module:', sqlite3 is s2, file=sy.stderr)
-                print('DBG-B IntegrityError identity:', sqlite3.IntegrityError is s2.IntegrityError,
-                      'exc class match:', type(exc) is sqlite3.IntegrityError, file=sy.stderr)
             db.rollback()
             with self.assertRaises(sqlite3.IntegrityError):
                 db.execute("UPDATE schedules SET channel_id='CH3'")

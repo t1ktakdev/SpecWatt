@@ -1,6 +1,7 @@
 import sqlite3
 from contextlib import closing
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
@@ -101,7 +102,8 @@ class ApiTests(unittest.TestCase):
         requested = self.command().json()
         self.client.post(self.base + '/simulator/step', headers=self.headers, json={'outcome': 'timeout'})
         response = self.client.post(self.base + '/simulator/telemetry', headers=self.headers,
-                                    json={'channels': {'CH1': 0, 'CH2': 0, 'CH3': 2.4}})
+                                    json={'channels': {'CH1': 0, 'CH2': 0, 'CH3': 2.4},
+                                          'command_id': requested['id'], 'measured_at': time.time(), 'sequence': 1})
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(self.snapshot()['total_watts'], 2.4)
         command = self.client.get(self.base + '/commands/' + requested['id'], headers=self.headers).json()
@@ -119,7 +121,8 @@ class ApiTests(unittest.TestCase):
         blocked = self.command(key='before-reconciliation')
         self.assertEqual(blocked.json()['detail']['code'], 'stale_measurements')
         response = self.client.post(self.base + '/simulator/telemetry', headers=self.headers,
-                                    json={'channels': {'CH1': 1.8, 'CH2': 0, 'CH3': 2.4}})
+                                    json={'channels': {'CH1': 1.8, 'CH2': 0, 'CH3': 2.4},
+                                          'command_id': requested['id'], 'measured_at': time.time(), 'sequence': 1})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['total_watts'], 4.2)
         self.assertEqual(response.json()['channels'][0]['watts'], 1.8)
