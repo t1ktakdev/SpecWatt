@@ -55,6 +55,9 @@ class SchedulerFaultTests(unittest.TestCase):
         self.client.patch(f'/v1/controllers/{cid}/channels/CH1/assignment', headers=self.headers,
                           json={'name': 'Светильник', 'room': 'Лаборатория', 'image': 'lamp',
                                 'allow_auto': True})
+        self.client.patch(f'/v1/controllers/{cid}/channels/CH2/assignment', headers=self.headers,
+                          json={'name': 'LED-лента', 'room': 'Лаборатория', 'image': 'led-strip',
+                                'allow_auto': True})
         # All-off baseline via consented autopilot (no manual hold), then ack it.
         self.client.post(f'/v1/controllers/{cid}/commands', headers=self.headers,
                          json={'channel_id': 'CH1', 'on': False, 'origin': 'autopilot',
@@ -63,10 +66,11 @@ class SchedulerFaultTests(unittest.TestCase):
                          json={'outcome': 'acknowledged'})
         return cid
 
-    def schedule(self, base=None, controller=None, start_offset=0, duration=1800, action='on'):
+    def schedule(self, base=None, controller=None, start_offset=0, duration=1800, action='on',
+                 channel='CH1'):
         cid = controller or self.controller
         start = (base or BASE) + start_offset
-        payload = {'channel_id': 'CH1', 'action': action, 'start_at': start}
+        payload = {'channel_id': channel, 'action': action, 'start_at': start}
         if action == 'on':
             payload['duration_seconds'] = duration
         response = self.client.post(f'/v1/controllers/{cid}/schedules', headers=self.headers, json=payload)
@@ -126,6 +130,9 @@ class SchedulerFaultTests(unittest.TestCase):
                                       'sequence': sequence})
 
     def sql(self, statement, params=()):
+        # Deliberately no PRAGMA foreign_keys=ON: fault scenarios must be able
+        # to create state the guarded API cannot (e.g. a dangling schedule
+        # command reference). Adding the pragma here silently breaks them.
         with closing(sqlite3.connect(self.db)) as db:
             with db:
                 db.execute(statement, params)
@@ -133,37 +140,42 @@ class SchedulerFaultTests(unittest.TestCase):
     # -- worker fault isolation (fix under test: worker.py) ----------------
     def test_worker_pass_isolates_failing_controller_and_rolls_back(self):
         second = self.new_controller('Стенд Б')
-        first_schedule = self.schedule()
-        second_schedule = self.schedule(controller=second)
+        first_a = self.schedule(duration=1800)
+        first_b = self.schedule(controller=second)
         self.advance(60)
         real_run = __import__('specwatt_api.scheduler.runner', fromlist=['run_due_schedules']).run_due_schedules
         raised = []
 
         def flaky(db, controller, now):
-            if controller['id'] == self.controller:
-                raised.append(controller['id'])
-                raise sqlite3.OperationalError('injected fault')
-            return real_run(db, controller, now)
+            # Every controller performs its real dispatch first and only then
+            # fails, so the rollback proof covers genuine partial state - and
+            # a weakened fix (one try/except around the whole loop) can never
+            # serve both controllers in one pass, in any enumeration order.
+            result = real_run(db, controller, now)
+            raised.append(controller['id'])
+            raise sqlite3.OperationalError('injected fault')
 
         with patch('specwatt_api.scheduler.runner.run_due_schedules', side_effect=flaky), \
                 patch('specwatt_api.scheduler.worker._LOG') as log:
-            # The poisoned controller must not starve the healthy one, and the
+            # The poisoned controllers must not starve each other, and the
             # failing pass must leave zero partial state behind.
             __import__('specwatt_api.scheduler.worker', fromlist=['run_worker_pass']).run_worker_pass(
                 str(self.db), self.clock)
-        self.assertEqual(raised, [self.controller])
-        self.assertEqual(log.exception.call_count, 1, 'the fault must be diagnosed, not swallowed')
-        self.assertIn(self.controller, log.exception.call_args.args,
-                      'the diagnostic must name the poisoned controller')
-        self.assertEqual(len(self.scheduler_commands(second)), 1, 'healthy controller must be served')
-        self.assertEqual(self.scheduler_commands(), [], 'failed pass must roll back cleanly')
-        self.assertEqual(self.schedule_row(first_schedule['id'])['schedule']['status'], 'pending')
-        self.assertEqual(self.schedule_row(second_schedule['id'], second)['schedule']['status'], 'running')
-        # The next pass retries the failed controller successfully.
+        self.assertEqual(set(raised), {self.controller, second},
+                         'every controller must be attempted in the same pass, not just the first')
+        self.assertEqual(log.exception.call_count, 2, 'each fault must be diagnosed, not swallowed')
+        self.assertEqual(self.scheduler_commands(), [], 'partial writes must roll back')
+        self.assertEqual(self.scheduler_commands(second), [])
+        for row, cid in ((first_a, self.controller), (first_b, second)):
+            self.assertEqual(self.schedule_row(row['id'], cid)['schedule']['status'], 'pending')
+            self.assertEqual(self.schedule_row(row['id'], cid)['schedule']['command_id'], None)
+        # The next pass retries both controllers successfully.
         __import__('specwatt_api.scheduler.worker', fromlist=['run_worker_pass']).run_worker_pass(
             str(self.db), self.clock)
         self.assertEqual(len(self.scheduler_commands()), 1)
-        self.assertEqual(self.scheduler_commands()[0]['status'], 'requested')
+        self.assertEqual(len(self.scheduler_commands(second)), 1)
+        self.assertEqual(self.schedule_row(first_a['id'], self.controller)['schedule']['status'], 'running')
+        self.assertEqual(self.schedule_row(first_b['id'], second)['schedule']['status'], 'running')
 
     # -- cancelled linked command must terminate the schedule --------------
     def test_cancelled_command_terminates_linked_schedule(self):
@@ -181,6 +193,8 @@ class SchedulerFaultTests(unittest.TestCase):
         row = self.schedule_row(created['id'])['schedule']
         self.assertEqual(row['status'], 'rejected')
         self.assertEqual(row['rejection_reason'], 'command_cancelled')
+        self.assertIn('schedule.rejected', [e['kind'] for e in self.client.get(
+            self.base + '/events', headers=self.headers).json()], 'the rejection must be audited')
         self.assertEqual(len(self.scheduler_commands()), 1, 'no new command may be issued')
 
     # -- restart recovery (state must survive the process) -----------------
@@ -354,7 +368,10 @@ class SchedulerFaultTests(unittest.TestCase):
                                     json={'channel_id': 'CH2', 'action': 'on', 'start_at': BASE + 60,
                                           'duration_seconds': 60})
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()['detail']['code'], 'stale_measurements')
+        # Assert on the check list, not the first failing code: the top-level
+        # code depends on the engine's check ordering, the check set does not.
+        self.assertIn('stale_measurements', [c['code'] for c in
+                                             response.json()['detail']['evaluation']['checks'] if not c['ok']])
         # Clock-only advance: no telemetry refresh, so the tampered future
         # sample is what the dispatch actually sees.
         self.clock.advance(60)
@@ -400,7 +417,9 @@ class SchedulerFaultTests(unittest.TestCase):
             await cm.__aenter__()
             try:
                 thread = app.state.scheduler_worker
-                self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                # Generous wall-clock upper bound for a loaded CI runner; the
+                # passing path completes immediately once release.set() fires.
+                self.assertTrue(await asyncio.to_thread(started.wait, 5))
                 exit_task = asyncio.create_task(cm.__aexit__(None, None, None))
                 release.set()
                 await asyncio.wait_for(exit_task, 5)
@@ -425,6 +444,51 @@ class SchedulerFaultTests(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0]['status'], 'requested')
         self.assertEqual(self.schedule_row(created['id'])['schedule']['status'], 'running')
+
+    def test_tick_and_worker_race_insert_one_phase(self):
+        # The one entry-point pair whose mutual exclusion is claimed but never
+        # exercised: an authenticated tick and an unauthenticated worker pass
+        # racing on the same due schedule.
+        from concurrent.futures import ThreadPoolExecutor
+        from specwatt_api.scheduler.worker import run_worker_pass
+        created = self.schedule(duration=1800)
+        self.advance(60)
+
+        def race(_):
+            if _ == 0:
+                return self.tick()['processed']
+            run_worker_pass(str(self.db), self.clock)
+            return []
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(race, range(2)))
+        # Outcome-independent invariants: whichever entry point wins, the
+        # phase command exists exactly once. The tick either performed the
+        # dispatch itself or observed the worker's command as in-flight.
+        self.assertLessEqual(sum(p['result'] == 'dispatched_start' for p in outcomes[0]), 1)
+        self.assertNotIn('rejected', [p['result'] for p in outcomes[0]])
+        self.assertEqual(len(self.scheduler_commands()), 1)
+        self.assertEqual(self.scheduler_commands()[0]['status'], 'requested')
+        self.assertEqual(self.schedule_row(created['id'])['schedule']['status'], 'running')
+
+    def test_uncertainty_resolved_after_expiry_closes_fail_safe(self):
+        created = self.schedule(duration=3)
+        self.advance(60)
+        self.assertEqual(self.tick()['processed'][0]['result'], 'dispatched_start')
+        self.step(outcome='timeout')
+        self.assertEqual([p['result'] for p in self.tick()['processed']], ['uncertain'])
+        # The window expires while ambiguous; the authoritative correlated
+        # sample (inside the send-freshness window) then proves the target WAS
+        # reached. The runner must never re-issue the start, and must close
+        # the window immediately.
+        self.clock.advance(5)
+        command_id = self.schedule_row(created['id'])['command']['id']
+        self.assertEqual(self.correlated_telemetry(command_id, 1.8).status_code, 200)
+        self.assertEqual([p['result'] for p in self.tick()['processed']], ['dispatched_end'])
+        self.step()
+        self.assertEqual([p['result'] for p in self.tick()['processed']], ['completed'])
+        self.assertEqual(len(self.scheduler_commands()), 2)
+        self.assertEqual(self.schedule_row(created['id'])['schedule']['status'], 'completed')
 
     def test_staggered_windows_complete_exactly_once(self):
         windows = [self.schedule(start_offset=60 * i, duration=60) for i in range(6)]
