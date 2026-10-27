@@ -208,6 +208,35 @@ Invariants re-pinned by regression (RED first, then GREEN): auth-401 with `null`
 - Full `npm test`: **159 pass / 0 fail / 0 skipped**; `npm run typecheck` exit 0; `npm run lint` exit 0.
 - `python -m unittest discover -s security -q`: OK, exit 0 (static repo-hygiene contract intact); `python security/scan_secrets.py`: clean, exit 0; `git diff --check`: clean.
 
+## 11.7 Web UI QA of the server workspace (browser, loopback; 2026-10-28, HEAD 7544060 + this doc commit)
+
+First user-facing acceptance evidence for the server workspace, executed with the actually available ZCode in-app browser (Playwright surface) against the **web dev build** (`npx expo start --web`, port 8091) talking to an **isolated loopback FastAPI + throwaway SQLite** fixture (port 8123, `SPECWATT_CORS_ORIGINS` limited to the two local Metro origins, DB in the OS-scoped watchdog evidence directory and deleted after the pass; backend sources untouched, `hardware_transport=false` re-verified). Everything below is **browser web evidence and is explicitly NOT an Android result**; the six main demo screens were not involved.
+
+- Provenance: worktree `zcode-max-mobile-server`, viewport 440×900 and 320×700 (`setViewportSize`), locales RU then KY (switched through the real settings UI), binary evidence `C:\Users\user\Documents\ChatGPT\ZCode-Night-Watchdog\evidence\D\web-qa\*.png` (19 files, outside Git) with `backend.log`/`metro.log`; fixture launcher `backend_fixture.py` in the same directory. Synthetic allowlisted credential only; no bearer/PII in any screenshot (tokens are never rendered by the UI).
+- Verification commands: `curl http://127.0.0.1:8123/health` → 200 `hardware_transport:false`; `curl -X OPTIONS .../v1/auth/login -H "Origin: http://localhost:8091"` → 200; Metro `HTTP=200`. Backend access log cross-checked against every UI action.
+
+| # | Scenario | Observation | Verdict |
+| --- | --- | --- | --- |
+| A | Login with unreachable backend (dead port) | Honest `network_error` text on the login form, demo intact, password wiped after the attempt (01) | PASS |
+| B | Register/login on loopback + create simulator | Account created (201), controllers list, "QA-стенд" appears with fresh snapshot 4,2 Вт (02, 03) | PASS |
+| C | Protected CH3 | "CH3 · Вентилятор — Защищён · управление запрещено", no command/consent controls rendered for CH3 in any state (03, 07, 10, 16) | PASS |
+| D | Manual command requested → step | "Запрошена" with measurements unchanged, then explicit step → "Запрошена → Отправлена → Подтверждена симулятором" and watts move (04, 05) — no false success | PASS |
+| D2 | Step dispatched after the 30 s freshness window | Server honestly rejects: "Отклонена · Измерения устарели…" rendered from the reason code (06) — honest rejection, not a UI bug | PASS |
+| E | Fresh/stale snapshot (30 s gap, real wait) | After >30 s: "Телеметрия устарела или результат неизвестен", channels "Нет свежих измерений", command CTAs visibly disabled (07) | PASS |
+| F1 | Network loss during a command (backend stopped) | `network_error` alert + the uncertain banner "Результат запроса неизвестен. Обновите историю; автоматического повтора нет." (08) | PASS |
+| F2 | Recovery after reconnect (backend restarted, same fixture DB) | Refresh succeeds, banner cleared, telemetry fresh again after an explicit sample (09, 10) | PASS |
+| G1 | Schedule preview rejection | Preview honestly lists per-check reasons for CH1 (stale measurements, no consent, manual priority hold from the earlier manual command) and keeps Save disabled (11-rejected) | PASS |
+| G2 | Schedule preview feasible on CH2 (consented) | "Окно допустимо сейчас…" + projection "Прогноз пика: 6.6 W · Энергия нагрузки: 2.1 Wh", Save enabled (11) | PASS |
+| G3 | Schedule create/list/cancel | Pending row "CH2 · Включить · Ожидает окна" with server timestamps (12); cancel confirmation with the honest "уже включённая нагрузка останется включённой" warning (13); row becomes "Отменено" | PASS |
+| H | Session expiry → return to login | Session row removed from the fixture DB; next action → "Сессия недействительна. Войдите заново.", login form restored, controller list gone (14) | PASS |
+| V1 | 320 px critical states | Login→controller flow, channels with full-width controls, schedules form and list rows: no horizontal clipping of critical controls; long RU strings wrap (15–17) | PASS |
+| V2 | KY locale | Settings switch applies instantly; server workspace fully Kyrgyz incl. errors and channel states (18, 19) | PASS |
+
+### Honest notes and limitations
+
+- The pass used a page-context `fetch` logging shim and `el.click()` dispatches because the IAB backend's Playwright locator clicks timed out on React Native Web pressables; three early clicks raced React's batched re-renders right after `fill()` on freshly mounted routes (state not yet committed → the app fetched a stale URL and honestly reported `network_error`). Re-issued clicks with settle delays worked every time; the backend access log confirms each eventual action reached the server with the expected status. This is an automation-harness artifact, **not** counted as an app defect and **not** fixed in code.
+- The "server-confirmed timeout" outcome is reachable in the UI only through the scheduler dispatch path; it was exercised via the unit/e2e suites instead (the step button always requests acknowledgement). The uncertain banner itself was demonstrated via the deterministic network-loss path (F1).
+- Browser web evidence only: no emulator, no device, no TalkBack; no APK built. The known history-only secret-scan blocker remains with the integrator and was not touched.
 ## 12. Commit list
 
 All commits authored as `ZCode Mobile Server Resilience Agent <zcode-mobile-server@localhost>` (own identity; the shared repo config of other agents was never modified).
