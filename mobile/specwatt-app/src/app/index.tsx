@@ -6,8 +6,9 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  useWindowDimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Copy, CTA, Panel, Photo } from "../specwatt/ui";
 import { theme, sty } from "../specwatt/theme";
@@ -17,6 +18,10 @@ import { useSpec } from "../specwatt/store";
 
 type Page = "welcome" | "locale" | "mode" | "login" | "register" | "recovery";
 export default function Onboarding() {
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const availableHeight = height - insets.top - insets.bottom;
+  const welcomeImageHeight = Math.max(130, Math.min(220, availableHeight * 0.24));
   const { data, ready, setLocale, enterDemo, setOnboarded } = useSpec();
   const [page, setPage] = useState<Page>("welcome");
   const [email, setEmail] = useState("");
@@ -82,7 +87,7 @@ export default function Onboarding() {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[sty.body, { paddingTop: 30, minHeight: 800 }]}
+          contentContainerStyle={[sty.body, { paddingTop: 24, maxWidth: 440, width: "100%", alignSelf: "center" }, page === "welcome" && { gap: 12 }]}
         >
           <View style={[sty.row, { justifyContent: "space-between" }]}>
             <Copy size={26}>
@@ -97,15 +102,15 @@ export default function Onboarding() {
           </View>
           {page === "welcome" && (
             <>
-              <Panel style={{ padding: 0, overflow: "hidden", marginTop: 20 }}>
+              <Panel style={{ padding: 0, overflow: "hidden", marginTop: 8 }}>
                 <Photo
                   source={imageMap["lamp-scene"]}
-                  style={{ width: "100%", height: 292 }}
+                  style={{ width: "100%", height: welcomeImageHeight }}
                 />
               </Panel>
-              <Copy size={37}>{hint("Всё работает", "Баары иштейт")}</Copy>
-              <Copy size={37} accent>
-                {hint("в своё время.", "өз убагында.")}
+              <Copy size={32}>
+                {hint("Всё работает", "Баары иштейт")}{"\n"}
+                <Copy size={32} accent>{hint("в своё время.", "өз убагында.")}</Copy>
               </Copy>
               <Copy muted>
                 {hint(
@@ -113,11 +118,11 @@ export default function Onboarding() {
                   "Окуу стендиндеги жүктөм, уруксаттар жана коопсуз чечимдер.",
                 )}
               </Copy>
-              <View style={[sty.row, { gap: 10, marginVertical: 15 }]}>
+              <View style={[sty.row, { gap: 10, marginVertical: 4 }]}>
                 {["◷", "⌁", "♢"].map((a, i) => (
                   <View
                     key={i}
-                    style={[sty.card, { flex: 1, alignItems: "center" }]}
+                    style={[sty.card, { flex: 1, alignItems: "center", paddingVertical: 10, paddingHorizontal: 8 }]}
                   >
                     <Copy size={25} accent>
                       {a}

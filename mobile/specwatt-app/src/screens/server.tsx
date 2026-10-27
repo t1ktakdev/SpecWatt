@@ -19,6 +19,9 @@ import type {
 import { Copy, CTA, Panel } from "../specwatt/ui";
 import { sty, theme } from "../specwatt/theme";
 import { useSpec } from "../specwatt/store";
+import ServerSchedules from "./server-schedules";
+import { createServerRequestScope, isSessionFailure } from "../specwatt/server-request-scope";
+import type { ServerSession } from "../specwatt/server-request-scope";
 
 const unresolved = (command: ServerCommand) =>
   ["requested", "sent", "timeout", "transport-error"].includes(command.status);
@@ -41,7 +44,10 @@ export default function ServerScreen() {
     [vault],
   );
   const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
-  const [client, setClient] = useState<BrainClient | null>(null);
+  const scope = useMemo(() => createServerRequestScope<BrainClient>(), []);
+  const [session, setSession] = useState<ServerSession<BrainClient> | null>(null);
+  const client = session?.connection ?? null;
+  const schedulerApi = useMemo(() => client?.scheduler() ?? null, [client]);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -57,8 +63,10 @@ export default function ServerScreen() {
   const serial = useRef(0);
   const mounted = useRef(true);
 
-  function clearSession() {
-    setClient(null);
+  function clearSession(expected?: ServerSession<BrainClient> | null) {
+    if (expected && !scope.isSession(expected)) return;
+    scope.invalidate();
+    setSession(null);
     setControllers([]);
     setSnapshot(null);
     setCommands([]);
@@ -69,9 +77,11 @@ export default function ServerScreen() {
     lock.current = true;
     setBusy(true);
     setError("");
+    const startedSession = session;
     try {
       await action();
     } catch (failure) {
+      if (startedSession && !scope.isSession(startedSession)) return;
       const code =
         failure instanceof ApiError ? failure.code : "operation_failed";
       if (
@@ -79,16 +89,7 @@ export default function ServerScreen() {
         ["request_timeout", "network_error", "invalid_response"].includes(code)
       )
         setUncertain(true);
-      if (
-        [
-          "session_required",
-          "session_expired",
-          "invalid_session",
-          "authentication_required",
-          "http_401",
-        ].includes(code)
-      )
-        clearSession();
+      if (isSessionFailure(code)) clearSession(startedSession);
       if (mounted.current) setError(code);
     } finally {
       lock.current = false;
@@ -98,16 +99,17 @@ export default function ServerScreen() {
 
   useEffect(() => {
     mounted.current = true;
+    const restored = scope.activate(initial);
     void (async () => {
       try {
         if (!(await initial.hasSession())) return;
         const rows = await initial.controllers();
-        if (mounted.current) {
-          setClient(initial);
+        if (mounted.current && scope.isSession(restored)) {
+          setSession(restored);
           setControllers(rows);
         }
       } catch (failure) {
-        if (mounted.current)
+        if (mounted.current && scope.isSession(restored))
           setError(
             failure instanceof ApiError ? failure.code : "operation_failed",
           );
@@ -115,18 +117,22 @@ export default function ServerScreen() {
     })();
     return () => {
       mounted.current = false;
+      scope.invalidate();
     };
-  }, [initial]);
+  }, [initial, scope]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  async function refresh(id: string, connection = client) {
-    if (!connection) return;
+  async function refresh(id: string, expected = session, select = false) {
+    const ticket = select ? scope.select(expected, id) : scope.refresh(expected, id);
+    if (!ticket || !expected) return;
+    const connection = expected.connection;
     const value = await connection.snapshot(id);
     const history = await connection.commands(id);
+    if (!mounted.current || !scope.canCommit(ticket)) return;
     setSnapshot(value);
     setCommands(history);
     setUncertain(false);
@@ -237,6 +243,7 @@ export default function ServerScreen() {
       sent: w("Отправлена", "Жөнөтүлдү"),
       acknowledged: w("Подтверждена симулятором", "Симулятор ырастады"),
       rejected: w("Отклонена", "Четке кагылды"),
+      cancelled: w("Отменена до отправки", "Жөнөтүлгөнгө чейин жокко чыгарылды"),
       timeout: w("Тайм-аут", "Күтүү мөөнөтү бүттү"),
       "transport-error": w("Ошибка передачи", "Жөнөтүү катасы"),
       reconciled: w("Сверена с телеметрией", "Телеметрия менен текшерилди"),
@@ -379,10 +386,14 @@ export default function ServerScreen() {
                       development: __DEV__,
                       vault,
                     });
+                    const signedIn = scope.activate(connection);
                     try {
                       await connection.authenticate(mode, email, password);
-                      setClient(connection);
-                      setControllers(await connection.controllers());
+                      const rows = await connection.controllers();
+                      if (mounted.current && scope.isSession(signedIn)) {
+                        setSession(signedIn);
+                        setControllers(rows);
+                      }
                     } finally {
                       setPassword("");
                     }
@@ -411,7 +422,7 @@ export default function ServerScreen() {
                   secondary
                   label={controller.name}
                   onPress={() => {
-                    void run(() => refresh(controller.id));
+                    void run(() => refresh(controller.id, session, true));
                   }}
                 />
               ))}
@@ -448,7 +459,7 @@ export default function ServerScreen() {
                     const created = await client.createSimulator(name);
                     setName("");
                     setControllers(await client.controllers());
-                    await refresh(created.id);
+                    await refresh(created.id, session, true);
                   });
                 }}
               />
@@ -516,6 +527,22 @@ export default function ServerScreen() {
                           }}
                         />
                       )}
+                      {!channel.protected && (
+                        <CTA
+                          disabled={busy || waiting}
+                          secondary
+                          label={channel.assigned.allow_auto
+                            ? w("Запретить автоматизацию и расписания", "Автоматикага жана жадыбалга тыюу салуу")
+                            : w("Разрешить автоматизацию и расписания", "Автоматикага жана жадыбалга уруксат берүү")}
+                          onPress={() => {
+                            void run(async () => {
+                              setSnapshot(await client.automationConsent(
+                                snapshot.controller_id, channel, !channel.assigned.allow_auto,
+                              ));
+                            });
+                          }}
+                        />
+                      )}
                     </Panel>
                   ))}
                   <Copy muted size={12}>
@@ -576,8 +603,8 @@ export default function ServerScreen() {
                   />
                   <Copy muted size={12}>
                     {w(
-                      "Образец создаёт только серверный симулятор из последних известных значений. Это не опрос оборудования.",
-                      "Үлгүнү сервердик симулятор акыркы белгилүү маанилерден түзөт. Бул жабдууну сурамжылоо эмес.",
+                      "Образец создаёт серверный симулятор из последних значений. Он не подтверждает старые команды и не опрашивает оборудование.",
+                      "Үлгүнү сервердик симулятор акыркы маанилерден түзөт. Ал эски буйруктарды ырастабайт жана жабдууну сурамжылабайт.",
                     )}
                   </Copy>
                   {uncertain && (
@@ -587,6 +614,16 @@ export default function ServerScreen() {
                         "Суроонун жыйынтыгы белгисиз. Тарыхты жаңыртыңыз; автоматтык кайталоо жок.",
                       )}
                     </Copy>
+                  )}
+                  {schedulerApi && (
+                    <ServerSchedules
+                      key={snapshot.controller_id}
+                      api={schedulerApi}
+                      controllerId={snapshot.controller_id}
+                      locale={data.locale}
+                      onChanged={() => refresh(snapshot.controller_id, session)}
+                      onSessionExpired={() => clearSession(session)}
+                    />
                   )}
                   <Copy size={21}>
                     {w("Команды сервера", "Сервердин буйруктары")}

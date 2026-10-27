@@ -1,4 +1,5 @@
 /** Server simulator transport. Never reads or mutates the offline demo store. */
+import { createSchedulerApi } from "./scheduler-api.ts";
 export class ApiError extends Error {
   code: string;
   constructor(code: string) {
@@ -75,6 +76,7 @@ export type ServerSnapshot = {
   name: string;
   source: "simulator";
   measured_at: number;
+  telemetry_sequence: number;
   freshness: "fresh" | "stale";
   total_watts: number | null;
   peak_watts: number;
@@ -82,6 +84,8 @@ export type ServerSnapshot = {
 };
 export function parseSnapshot(value: unknown): ServerSnapshot {
   const item = object(value);
+  const sequence = item.telemetry_sequence === undefined ? 0 : number(item.telemetry_sequence);
+  if (!Number.isSafeInteger(sequence)) throw new ApiError("invalid_response");
   if (item.source !== "simulator") throw new ApiError("unsupported_source");
   if (
     !["fresh", "stale"].includes(item.freshness as string) ||
@@ -138,6 +142,7 @@ export function parseSnapshot(value: unknown): ServerSnapshot {
     name: string(item.name, 80),
     source: "simulator",
     measured_at: number(item.measured_at),
+    telemetry_sequence: sequence,
     freshness: item.freshness as ServerSnapshot["freshness"],
     total_watts: total,
     peak_watts: number(item.peak_watts),
@@ -154,6 +159,7 @@ export type ServerCommand = {
     | "sent"
     | "acknowledged"
     | "rejected"
+    | "cancelled"
     | "timeout"
     | "transport-error"
     | "reconciled";
@@ -170,6 +176,7 @@ function parseCommand(value: unknown): ServerCommand {
       "sent",
       "acknowledged",
       "rejected",
+      "cancelled",
       "timeout",
       "transport-error",
       "reconciled",
@@ -372,6 +379,9 @@ export class BrainClient {
   private path(id: string) {
     return "/v1/controllers/" + encodeURIComponent(id);
   }
+  scheduler() {
+    return createSchedulerApi((path, method, body) => this.request(path, method, body));
+  }
   async snapshot(id: string) {
     return parseSnapshot(await this.request(this.path(id) + "/snapshot"));
   }
@@ -380,6 +390,13 @@ export class BrainClient {
     if (!Array.isArray(result) || result.length > 100)
       throw new ApiError("invalid_response");
     return result.map(parseCommand);
+  }
+  async automationConsent(id: string, channel: ServerChannel, allowed: boolean): Promise<ServerSnapshot> {
+    if (channel.id === "CH3" || channel.protected) throw new ApiError("protected_channel");
+    return parseSnapshot(await this.request(
+      this.path(id) + "/channels/" + encodeURIComponent(channel.id) + "/assignment",
+      "PATCH", { ...channel.assigned, allow_auto: allowed },
+    ));
   }
   async command(
     id: string,

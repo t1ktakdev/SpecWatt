@@ -1,5 +1,5 @@
 import React, { useId } from "react";
-import { StyleProp, ViewStyle } from "react-native";
+import { Platform, StyleProp, ViewStyle } from "react-native";
 import Svg, {
   Defs,
   LinearGradient,
@@ -1915,15 +1915,15 @@ export function DeviceIllustration({
       width={width}
       height={height}
       viewBox="0 0 320 240"
-      style={style}
-      accessible={!!accessibilityLabel}
+      style={[{ position: "relative" }, style]}
+      accessible={Platform.OS === "web" ? undefined : !!accessibilityLabel}
       accessibilityLabel={accessibilityLabel}
     >
       <Defs>
         <LinearGradient id={`${prefix}body`} x1="0%" y1="0%" x2="100%" y2="85%">
           <Stop offset="0" stopColor="#FFF5D8" stopOpacity={0.84} />
-          <Stop offset=".23" stopColor={illustrationColors[safe.color]} />
-          <Stop offset=".72" stopColor={illustrationColors[safe.color]} />
+          <Stop offset="0.23" stopColor={illustrationColors[safe.color]} />
+          <Stop offset="0.72" stopColor={illustrationColors[safe.color]} />
           <Stop offset="1" stopColor="#222C23" />
         </LinearGradient>
         <LinearGradient
@@ -1934,15 +1934,15 @@ export function DeviceIllustration({
           y2="100%"
         >
           <Stop stopColor="#616D58" />
-          <Stop offset=".25" stopColor="#354131" />
-          <Stop offset=".67" stopColor="#151E16" />
+          <Stop offset="0.25" stopColor="#354131" />
+          <Stop offset="0.67" stopColor="#151E16" />
           <Stop offset="1" stopColor="#0C140E" />
         </LinearGradient>
         <LinearGradient id={`${prefix}metal`} x1="0%" y1="0%" x2="100%" y2="0%">
           <Stop stopColor="#554C36" />
-          <Stop offset=".2" stopColor="#D9C49C" />
-          <Stop offset=".4" stopColor="#B4AB8F" />
-          <Stop offset=".65" stopColor="#73775F" />
+          <Stop offset="0.2" stopColor="#D9C49C" />
+          <Stop offset="0.4" stopColor="#B4AB8F" />
+          <Stop offset="0.65" stopColor="#73775F" />
           <Stop offset="1" stopColor="#343E2E" />
         </LinearGradient>
         <LinearGradient
@@ -1953,13 +1953,13 @@ export function DeviceIllustration({
           y2="100%"
         >
           <Stop stopColor="#5F7C69" />
-          <Stop offset=".22" stopColor="#263B30" />
-          <Stop offset=".63" stopColor="#12251C" />
+          <Stop offset="0.22" stopColor="#263B30" />
+          <Stop offset="0.63" stopColor="#12251C" />
           <Stop offset="1" stopColor="#1C2F23" />
         </LinearGradient>
         <LinearGradient id={`${prefix}warm`} x1="0%" y1="0%" x2="0%" y2="100%">
           <Stop stopColor="#FFF7D7" />
-          <Stop offset=".55" stopColor="#FFDB94" />
+          <Stop offset="0.55" stopColor="#FFDB94" />
           <Stop offset="1" stopColor="#FFA15C" />
         </LinearGradient>
         <RadialGradient id={`${prefix}glow`}>

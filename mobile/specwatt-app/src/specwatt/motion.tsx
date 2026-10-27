@@ -1,5 +1,5 @@
 import React,{createContext,useContext,useEffect,useState} from 'react';
-import {AccessibilityInfo,Platform,Pressable,PressableProps,PressableStateCallbackType,StyleProp,ViewStyle,TextStyle,TextInput} from 'react-native';
+import {AccessibilityInfo,Platform,Pressable,PressableProps,StyleProp,ViewStyle,TextStyle,TextInput} from 'react-native';
 import Animated,{cancelAnimation,Easing,FadeIn,ReduceMotion,useAnimatedProps,useAnimatedStyle,useSharedValue,withSpring,withTiming} from 'react-native-reanimated';
 import {Path,Rect} from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
@@ -21,11 +21,14 @@ export function feedback(kind:'selection'|'confirm'|'reject'='selection',reduced
  const action=Platform.OS==='android'?Haptics.performAndroidHapticsAsync(kind==='reject'?Haptics.AndroidHaptics.Reject:kind==='confirm'?Haptics.AndroidHaptics.Confirm:Haptics.AndroidHaptics.Segment_Tick):Haptics.selectionAsync();
  action.catch(()=>{});
 }
-export function MotionPressable({style,onPress,onPressIn,onPressOut,disabled,...props}:PressableProps){
+export function MotionPressable({style,onPress,onPressIn,onPressOut,onHoverIn,onHoverOut,disabled,...props}:PressableProps){
  const reduced=useMotion(),scale=useSharedValue(1);
+ const [pressed,setPressed]=useState(false),[hovered,setHovered]=useState(false);
+ // Reanimated normalizes style to an array before native Pressable sees it.
+ // Resolve the state callback here so Yoga receives dimensions and positioning.
  const animated=useAnimatedStyle(()=>({transform:[{scale:scale.value}]}));
  useEffect(()=>{if(disabled||reduced){cancelAnimation(scale);scale.set(1);}return()=>cancelAnimation(scale);},[disabled,reduced,scale]);
- return <AnimatedPressable {...props} disabled={disabled} onPressIn={e=>{cancelAnimation(scale);scale.set(withTiming(reduced?1:motion.pressScale,{duration:motionDuration('fast',reduced),reduceMotion:ReduceMotion.System}));onPressIn?.(e);}} onPressOut={e=>{cancelAnimation(scale);scale.set(withSpring(1,{...motion.spring,reduceMotion:ReduceMotion.System}));onPressOut?.(e);}} onPress={e=>{feedback('selection',reduced);onPress?.(e);}} style={(state:PressableStateCallbackType)=>[typeof style==='function'?style(state):style,animated]}/>;
+ return <AnimatedPressable {...props} disabled={disabled} onHoverIn={e=>{setHovered(true);onHoverIn?.(e);}} onHoverOut={e=>{setHovered(false);onHoverOut?.(e);}} onPressIn={e=>{setPressed(true);cancelAnimation(scale);scale.set(withTiming(reduced?1:motion.pressScale,{duration:motionDuration('fast',reduced),reduceMotion:ReduceMotion.System}));onPressIn?.(e);}} onPressOut={e=>{setPressed(false);cancelAnimation(scale);scale.set(withSpring(1,{...motion.spring,reduceMotion:ReduceMotion.System}));onPressOut?.(e);}} onPress={e=>{feedback('selection',reduced);onPress?.(e);}} style={[typeof style==='function'?style({pressed:pressed&&!disabled,hovered:hovered&&!disabled}):style,animated]}/>;
 }
 export function Reveal({children,style}:{children:React.ReactNode;style?:StyleProp<ViewStyle>}){const reduced=useMotion();return <Animated.View entering={reduced?undefined:FadeIn.duration(motion.duration.standard).reduceMotion(ReduceMotion.System)} style={style}>{children}</Animated.View>;}
 export function AnimatedMetric({value,style,accessibilityLabel}:{value:number|null;style?:StyleProp<TextStyle>;accessibilityLabel:string}){

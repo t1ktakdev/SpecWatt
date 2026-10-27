@@ -1,4 +1,4 @@
-import React,{useMemo} from "react";
+import React,{useMemo,useState} from "react";
 import { createDemoHistory,integratePower } from "./energy";
 import type { ChannelId } from "./model";
 import Animated from "react-native-reanimated";
@@ -143,7 +143,7 @@ export function Shell({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Reveal style={{gap:12}}>
+          <Reveal style={{gap:active === "/home" ? 9 : 12}}>
           {!!storageError && (
             <View accessibilityRole="alert" style={s.warning}>
               <Copy size={12}>
@@ -210,8 +210,13 @@ function BottomNav({ active }: { active?: string }) {
             </AnimatedSelection>
             <Copy
               size={12}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
               style={{
                 fontSize: 10,
+                lineHeight: 14,
+                maxWidth: "100%",
                 color: selected ? theme.peach : theme.dim,
                 textAlign: "center",
               }}
@@ -358,11 +363,14 @@ export function Chips({
 }
 export function Gauge({value,label,subtitle,bolt=false,power,limit=7}:{value:string;label?:string;subtitle:string;bolt?:boolean;power?:number|null;limit?:number}){
  const ratio=normalizedPower(power===undefined?4.2:power,limit);
- return <View style={{height:190,justifyContent:'flex-end',alignItems:'center',paddingBottom:5}}>
+ const arc=(start:number,end:number)=>{const point=(p:number)=>[170+142*Math.cos(Math.PI*p),153-142*Math.sin(Math.PI*p)];const [x1,y1]=point(start),[x2,y2]=point(end);return `M${x1} ${y1} A142 142 0 0 0 ${x2} ${y2}`;};
+ return <View style={{height:186,justifyContent:'flex-end',alignItems:'center',paddingBottom:5}}>
   <Svg width="100%" height={176} viewBox="0 0 340 180" style={{position:'absolute',top:0}}>
    <Path d="M28 153 A142 142 0 0 1 312 153" stroke="#484B43" strokeWidth={16} strokeLinecap="round" fill="none"/>
-   <TracePath d="M312 153 A142 142 0 0 0 28 153" progress={ratio??0} length={446.2} stroke={theme.peach} strokeWidth={16} strokeLinecap="round" fill="none"/>
-   <Path d="M286 76L300 66 M254 38L264 23 M204 14L208 0" stroke="#1B1D19" strokeWidth={7}/>
+   {[[0,.20],[.25,.37],[.42,1]].map(([start,end])=>{
+    const filled=Math.min(end,ratio??0);
+    return filled>start?<TracePath key={start} d={arc(start,filled)} progress={1} length={(filled-start)*446.2} stroke={theme.peach} strokeWidth={16} strokeLinecap="round" fill="none"/>:null;
+   })}
   </Svg>
   {bolt?<Icon name="bolt" size={43} color={theme.peach}/>:<Copy muted size={13}>{label}</Copy>}
   {!bolt&&power!==undefined?<View style={{flexDirection:'row',alignItems:'baseline',gap:7}}><AnimatedMetric value={power} accessibilityLabel={`${power??'—'} Вт`} style={{fontFamily:theme.font,fontSize:57,color:theme.text,width:128,textAlign:'right',height:72}}/><Copy size={33}>Вт</Copy></View>:<Copy size={bolt?33:57} style={{marginTop:bolt?7:0}}>{value}</Copy>}
@@ -371,20 +379,22 @@ export function Gauge({value,label,subtitle,bolt=false,power,limit=7}:{value:str
 }
 export function HistoryChart({channelId}:{channelId?:ChannelId}={}) {
  const {data}=useSpec(),w=useWords();
+ const [details,setDetails]=useState(false);
  const history=useMemo(()=>data.source==='demo'&&data.channels.length===3?createDemoHistory(data.channels):null,[data.source,data.channels]);
  if(!history)return <Card><Copy muted>{w('История измерений пока недоступна','Өлчөөлөрдүн тарыхы азырынча жок')}</Copy></Card>;
  const samples=channelId?history.byChannel[channelId]:history.samples;
  const summary=channelId?integratePower(samples,{maxGapMs:3600000}):history.summary;
  const bars=samples.slice(0,-1),max=Math.max(2,Math.ceil((summary.peakW??0)/2)*2),height=66;
  const label=(at:number)=>new Date(at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bishkek'});
- return <Card style={{padding:14,gap:7}}>
-  <View style={s.between}><Copy size={14}>{w('Нагрузка сегодня','Бүгүнкү жүктөм')}</Copy><Copy muted size={12}>{w('Вт · демо','Вт · демо')}</Copy></View>
-  <Svg width="100%" height={88} viewBox="0 0 350 88" preserveAspectRatio="none" accessibilityLabel={w('Модельная история за 12 часов','12 сааттык үлгү тарых')}>
+ const summaryText=`${w('Демо · 12 ч','Демо · 12 саат')} · ${summary.complete?summary.observedWh.toFixed(1).replace('.',','):'—'} Wh · ${w('Пик','Чоку')} ${formatW(summary.peakW)} Вт`;
+ return <Card style={{padding:10,gap:6}}>
+  <View style={s.between}><Copy size={14}>{w('Нагрузка сегодня','Бүгүнкү жүктөм')}</Copy><Pressable accessibilityRole="button" accessibilityLabel={w('Показать энергию и пик','Энергия менен чокуну көрсөтүү')} accessibilityState={{expanded:details}} onPress={()=>setDetails(!details)} hitSlop={12} style={{flexDirection:'row',alignItems:'center',gap:6}}><Copy muted size={12}>{w('Вт · демо','Вт · демо')}</Copy><Icon name="info" size={16}/></Pressable></View>
+  <Svg width="100%" height={70} viewBox="0 0 350 88" preserveAspectRatio="none" accessibilityLabel={`${w('Модельная история за 12 часов','12 сааттык үлгү тарых')}. ${summaryText}`}>
    {[0,1,2,3].map(i=>{const n=i*max/3;return <React.Fragment key={i}><Line x1={23} x2={348} y1={height-n/max*height+5} y2={height-n/max*height+5} stroke="#32352D"/><SvgLabel x={2} y={height-n/max*height+8} fill={theme.dim} fontSize={9}>{n.toFixed(0)}</SvgLabel></React.Fragment>;})}
    {bars.map((sample,i)=><ChartBar key={sample.at} x={27+i*13.2} width={9} height={(sample.watts??0)/max*height} baseline={height+5} rx={1.6} fill={i>=bars.length-7&&i<bars.length-2?theme.peach:'#44483F'}/>)}
   </Svg>
   <View style={s.between}>{[0,6,12,18,24].map(i=><Copy key={i} size={12} muted style={{fontSize:10}}>{label(samples[i].at)}</Copy>)}</View>
-  <View style={s.between}><Copy size={12} muted>{w('Демо · 12 ч','Демо · 12 саат')} · {summary.complete?summary.observedWh.toFixed(1).replace('.',','):'—'} {'Wh'}</Copy><Copy size={12} muted>{w('Пик','Чоку')} {formatW(summary.peakW)} Вт</Copy></View>
+  {details&&<Copy size={12} muted>{summaryText}</Copy>}
  </Card>;
 }
 export function ComparisonChart({
@@ -398,6 +408,7 @@ export function ComparisonChart({
 }) {
   const w = useWords();
   const max = Math.max(9, ...before, ...after);
+  const [chartWidth, setChartWidth] = useState(350);
   return (
     <Card style={{ gap: 13 }}>
       <View style={s.between}>
@@ -406,9 +417,10 @@ export function ComparisonChart({
           Вт
         </Copy>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={labels.length > 4}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={labels.length > 4}
+        onLayout={event => setChartWidth(event.nativeEvent.layout.width)}>
         <Svg
-          width={Math.max(350, labels.length * 80 + 30)}
+          width={labels.length <= 4 ? chartWidth : Math.max(350, labels.length * 80 + 30)}
           height={180}
           viewBox={`0 0 ${Math.max(350, labels.length * 80 + 30)} 180`}
         >
@@ -557,6 +569,7 @@ export const s = StyleSheet.create({
   },
   navItem: {
     flex: 1,
+    minWidth: 0,
     alignItems: "center",
     gap: 5,
     minHeight: 58,
