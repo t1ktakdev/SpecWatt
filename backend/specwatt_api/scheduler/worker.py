@@ -22,11 +22,17 @@ def run_worker_pass(path, clock):
             "SELECT DISTINCT controller_id FROM schedules "
             "WHERE status IN ('pending','running','uncertain')")]
     for cid in controllers:
-        with connect(path) as db:
-            db.execute('BEGIN IMMEDIATE')
-            controller = db.execute('SELECT * FROM controllers WHERE id=?', (cid,)).fetchone()
-            if controller is not None and controller['source'] == 'simulator':
-                run_due_schedules(db, controller, clock.now())
+        try:
+            with connect(path) as db:
+                db.execute('BEGIN IMMEDIATE')
+                controller = db.execute('SELECT * FROM controllers WHERE id=?', (cid,)).fetchone()
+                if controller is not None and controller['source'] == 'simulator':
+                    run_due_schedules(db, controller, clock.now())
+        except Exception:
+            # One poisoned controller (damaged row, transient SQLite error,
+            # lock contention) must not starve the others: its transaction is
+            # rolled back whole and it is retried on the next poll.
+            _LOG.exception('Scheduler pass failed for controller %s; rolled back, retried next poll', cid)
 
 
 def scheduler_lifespan(path, clock, *, enabled=False, poll_seconds=1.0):

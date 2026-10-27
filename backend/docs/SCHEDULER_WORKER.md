@@ -18,6 +18,16 @@ schedule is rejected explicitly with `previous_phase_rejected_*` (prefixed by
 `end_phase_` for closing commands). The owner must create a new schedule;
 historic rejected records are never deleted or silently reissued.
 
+A pass processes controllers one by one. A failure on one controller
+(a damaged row, a transient SQLite error, lock contention) is logged with the
+controller id, its transaction is rolled back whole, and the remaining
+controllers are still served in the same pass; the failed controller is
+retried on the next poll. A linked command that a writer cancelled directly
+(direct SQLite access, not the documented cancel endpoint, which also cancels
+the schedule) can never resolve into an outcome: the runner terminates the
+schedule with an audited `command_cancelled` rejection instead of waiting on
+it forever, and never re-issues the phase.
+
 The worker only issues `requested` commands. It never acknowledges them,
 refreshes telemetry, bypasses stale/consent/manual/peak guards, or advances a
 virtual clock. An owner must explicitly run the simulator step and provide
