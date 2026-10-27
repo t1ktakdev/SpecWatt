@@ -46,7 +46,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 | `npm run lint` (baseline) | exit 0 |
 | `node --test tests/zcode-device-visual-forms.test.mjs` (RED, before fix) | 3 pass / 2 fail with 32 identical-pair findings + ultrawide width 238=238 |
 | `node --test tests/zcode-device-visual-defaults.test.mjs` (RED, one-line revert of `appliance` mapping) | 5 pass / 1 fail (`expected 'kettle', got 'unknown'`) |
-| `npm test` (after fixes, review fixes and both night-watchdog rounds) | **145 pass / 0 fail, exit 0** (114 pre-existing + 31 new across three files; no pre-existing test modified) |
+| `npm test` (after fixes, review fixes and both night-watchdog rounds) | **150 pass / 0 fail, exit 0** (114 pre-existing + 36 new across four files; no pre-existing test modified) |
 | `npm run typecheck` (after fixes) | exit 0 |
 | `npm run lint` (after fixes) | exit 0 |
 | `python security/scan_secrets.py` (repo root) | `SECRET SCAN: clean (tracked worktree files)`, exit 0 |
@@ -145,6 +145,34 @@ Failure-lifecycle coverage (fault seams added to the existing harness only; no n
 | any failure | busy flag released | immediate next import succeeds |
 
 Red/green: the four misclassification tests failed on the pre-fix head (11 pass / 4 fail), pass after the fix; the coordinator reproducer returns `{code:'photo-write-failed', sourcePreserved:true, partialOwned:0}` exit 0. Mock fault injection only — no physical native QA claimed.
+
+## Night-watchdog round 3 (web responsive/a11y QA of the catalogue)
+
+Method: local Expo web preview (port 8094), real Chromium DOM measurements + screenshots via browser automation; **browser evidence only — no Android/native acceptance is claimed**. Larger-text emulation = CSS `zoom` 1.3/1.5 on `body` (Chromium), explicitly NOT the native Android fontScale. Binary captures: `C:\Users\user\Documents\ChatGPT\ZCode-Night-Watchdog\evidence\B\web-qa\` (01-12, filenames below); text/DOM numbers recorded here.
+
+Scenario / viewport / locale -> actual result:
+
+| Scenario | Result | Limit / note |
+| --- | --- | --- |
+| 440x952 RU, full catalogue (01) | 0 px horizontal overflow; 139 buttons; header/preview/controls/search/groups render | fresh-load FlatList mounts all 120 SVG on web before the first scroll (bottom scroll -> 40 mounted); native FlatList measures its real viewport from the first frame — web-only artifact, documented, not a code change |
+| 320x800 RU (02) | 0 px overflow; Back 45x45 visible; footer CTA visible full-width (h=54) | preview/controls/tiles all legible; swatches fit one row |
+| long RU name at 320 (03, search verikalnaya -> 1 hit) | tile shows the 2-line ellipsis form (17 px suppressed) | full name stays in aria-label; standard list truncation, not a defect |
+| 800x360 landscape (04) | 0 px overflow; Back + CTA visible and inside the viewport | content scrolls under the fixed footer as designed |
+| empty search 440x952 (05) | empty message + counter 0; 1 SVG (preview only, zero tiles); Back reachable | search/empty/back chain works |
+| larger text zoom 1.3 @320 (06) | 0 px overflow; Back/CTA/search visible; title wraps mid-word | mid-word wrap is cosmetic (no word-break config); readable, left as-is |
+| larger text zoom 1.3 @320 (07) | DEFECT FOUND: 5th colour swatch only 15/58 px visible | colour row did not wrap |
+| larger text zoom 1.5 @320 | swatch fully off-screen (-32 px), 4th clipped (48 px) | fixed, see below |
+| 440x952 KY (08, real onboarding -> demo -> catalogue) | KY title/counter/swatch/CTA names; KY selected name wraps fully; 17 SVG mounted (windowed) | KY strings complete on this screen |
+| long KY name at 320 (09) | 2-line ellipsis; full name in aria-label | same truncation pattern as RU |
+| changed families spot-check, KY preview (10-11: ultrawide-monitor, floor-fan, extractor-fan, led-strip, wall-sconce, subwoofer, network-switch, desk-fan) | all distinct, proportional, Warm Graphite consistent with the approved references; nothing clips the preview | widest forms stay inside the 320x240 viewBox — also enforced by the signature/viewBox tests; NOT a pixel-parity claim |
+| SVG/bundled aspect | viewBox 0 0 320 240 enforced for all 119 by test; bundled photos are not part of the catalogue screen (their card rendering was verified against references in earlier rounds) | — |
+
+Fixes applied (owned files, minimal):
+
+1. **Colour swatch row wrapping** (`src/screens/catalog.tsx`): the five fixed-width swatches overflowed and clipped at 320 px + zoom (measured above). The row now has `flexWrap: "wrap"` + `rowGap: 8` — no visual change at widths where all five fit, wrapped rows where they do not. Browser-verified after the fix: zoom 1.5 @320 -> all swatches fully visible (12-after-fix captures).
+2. **Selected state announced by name** (`src/screens/catalog.tsx`): react-native-web drops `accessibilityState.selected` for `role=button` (measured: no `aria-selected` on any control), leaving selection purely visual on web. Tiles, colour swatches, variant/details buttons and group chips now append the localized selected marker to the accessible name when selected (native TalkBack additionally keeps the native selected state — the word is additive, not a replacement).
+
+Regression suite `tests/zcode-device-visual-catalog.test.mjs` (5 tests, real CatalogScreen + real catalogue/search logic, navigation/store/primitives mocked): exactly-one selected tile and all four control groups announce the marker in RU and KY (with the kyrgyz word), unselected entries stay unmarked; the colour row carries `flexWrap:"wrap"`; search drives the real `searchDevices` (empty state + counter 0, fridge query -> counter 3 with all three matches); selection/use flow only dismisses back with the verbatim config (no capability effects). The marker/wrap assertions failed before the fixes and pass after.
 
 ## Code review (two independent read-only reviewers, main agent dispositions)
 
