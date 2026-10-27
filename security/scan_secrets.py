@@ -2,7 +2,7 @@
 """SpecWATT secret scanner — working tree and full git history.
 
 High-signal, low-noise pattern scan. Findings are printed with MASKED values
-(first 3 characters only) so this tool is safe to run in public CI logs.
+(no matched characters) so this tool is safe to run in public CI logs.
 Exit codes: 0 = clean (allowlisted hits excluded), 1 = findings need review,
 2 = usage error.
 
@@ -36,6 +36,11 @@ PATTERNS = [
 # Literal value snippets that are known test fixtures or documentation
 # examples. Each entry needs a reason; keep this list minimal and audited.
 ALLOWLIST = [
+    ("generic-assignment", "leaked-secret-999", "synthetic rejected-input echo test"),
+    ("generic-assignment", "whatever-pass-123", "synthetic invalid login fixture"),
+    ("generic-assignment", "another-pass-12345", "synthetic duplicate registration fixture"),
+    ("generic-assignment", "correct-horse", "synthetic malformed request fixture"),
+    ("generic-assignment", "no-such-pass-1", "synthetic rate limit fixture"),
     ("generic-assignment", "correct-horse-battery", "security suite fixture password"),
     ("generic-assignment", "test-password-123", "existing backend test fixture"),
     ("generic-assignment", "wrong-password-123", "existing backend test fixture"),
@@ -55,12 +60,13 @@ MAX_FILE_BYTES = 2_000_000
 
 
 def mask(match_text):
-    return match_text[:3] + "***" if len(match_text) > 3 else "***"
+    return "[REDACTED]"
 
 
 def allowlisted(pattern_id, match_text):
     for list_id, snippet, _reason in ALLOWLIST:
-        if list_id == pattern_id and snippet in match_text:
+        value = re.search(r"[\"']([^\"']*)[\"']$", match_text)
+        if list_id == pattern_id and value and value.group(1) == snippet:
             return True
     return False
 
@@ -112,22 +118,26 @@ def scan_history():
     for commit in commits:
         for pattern_id, pattern in PATTERNS:
             result = subprocess.run(
-                ["git", "grep", "-I", "-n", "-E", "-i", to_posix(pattern.pattern),
+                ["git", "grep", "-I", "-n", "-E", "-i", "-e", to_posix(pattern.pattern),
                  commit, "--"],
                 cwd=REPO, capture_output=True,
             )
+            if result.returncode == 1:
+                continue
             if result.returncode != 0:
-                continue  # 1 = no match in this commit
+                raise RuntimeError('git history scan failed; results are incomplete')
             for line in result.stdout.decode("utf-8", "replace").splitlines():
                 # Format: <commit>:<path>:<lineno>:<content>
                 parts = line.split(":", 3)
                 if len(parts) != 4:
                     continue
                 content = parts[3]
-                if allowlisted(pattern_id, content):
+                generic_skip = any(fnmatch.fnmatch(parts[1], glob) for glob in GENERIC_SKIP_GLOBS)
+                if pattern_id == 'generic-assignment' and generic_skip:
                     continue
-                findings.append((pattern_id, f"{commit[:12]}:{parts[1]}:{parts[2]}",
-                                 mask(content.strip()[:60])))
+                for match in pattern.finditer(content):
+                    if not allowlisted(pattern_id, match.group(0)):
+                        findings.append((pattern_id, f"{commit[:12]}:{parts[1]}:{parts[2]}", mask(match.group(0))))
     return findings
 
 
@@ -137,7 +147,11 @@ def main():
                         help="scan every commit instead of the worktree")
     args = parser.parse_args()
 
-    findings = scan_history() if args.history else scan_worktree()
+    try:
+        findings = scan_history() if args.history else scan_worktree()
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        print('SECRET SCAN: failed; results are incomplete')
+        return 2
     if findings:
         print(f"SECRET SCAN: {len(findings)} finding(s) need review:\n")
         for pattern_id, source, masked in findings:

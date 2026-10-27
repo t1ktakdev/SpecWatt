@@ -29,6 +29,9 @@ jobs:
       - name: Upstream backend tests
         working-directory: backend
         run: python -m unittest discover -s tests -v
+      - name: Integrated loopback HTTP contract
+        working-directory: backend
+        run: python scripts/smoke.py
       - name: Security & reliability suite
         run: python -m unittest discover -s security -v
 
@@ -91,8 +94,24 @@ jobs:
       - name: Install mobile dependencies
         working-directory: mobile/specwatt-app
         run: npm ci
+      - name: Run mobile runtime contracts
+        working-directory: mobile/specwatt-app
+        run: npm test
+      - name: Check mobile types and lint
+        working-directory: mobile/specwatt-app
+        run: |
+          npm run typecheck
+          npm run lint
       - name: Run npm audit
         working-directory: mobile/specwatt-app
-        run: npm audit --json > "${{ github.workspace }}/npm-audit.json"
+        run: |
+          set +e
+          npm audit --json > "${{ github.workspace }}/npm-audit.json"
+          audit_status=$?
+          set -e
+          if [ "$audit_status" -gt 1 ]; then
+            echo "npm audit failed before producing a usable vulnerability report"
+            exit "$audit_status"
+          fi
       - name: Compare against reviewed baseline
         run: python security/check_npm_audit.py npm-audit.json

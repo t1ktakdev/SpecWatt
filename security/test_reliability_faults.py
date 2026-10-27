@@ -6,6 +6,7 @@ databases, in-process apps, monkeypatched transitions. No hardware exists on
 this path.
 """
 import unittest
+import time
 import uuid
 
 from support import Lab, bearer, NOMINAL
@@ -83,7 +84,8 @@ class ScenarioATests(unittest.TestCase):
         self.lab.step(self.owner, self.cid, outcome="timeout")
         mismatch = self.lab.client.post(
             self.base + "/simulator/telemetry", headers=bearer(self.owner),
-            json={"channels": {"CH1": 1.8, "CH2": 0, "CH3": 2.4}},
+            json={"channels": {"CH1": 1.8, "CH2": 0, "CH3": 2.4},
+                  "command_id": requested.json()["id"], "measured_at": time.time(), "sequence": 1},
         )
         self.assertEqual(mismatch.status_code, 200)
         command = self.lab.client.get(

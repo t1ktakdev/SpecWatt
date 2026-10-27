@@ -25,11 +25,11 @@ BASELINE_PATH = Path(__file__).resolve().parent / "baselines" / "npm-audit-basel
 
 
 def advisory_identity(name, entry):
-    """A stable identity: package name plus the underlying advisory titles."""
+    """Stable identities from advisory URLs/source IDs and dependency edges."""
     titles = []
     for via in entry.get("via", []):
         if isinstance(via, dict):
-            titles.append(via.get("title", ""))
+            titles.append(via.get("url") or str(via.get("source") or via.get("title", "")))
         else:
             titles.append(f"range:{via}")
     return {"name": name, "titles": sorted(titles)}
@@ -48,12 +48,25 @@ def main():
                         help="write the current advisories as the new baseline")
     args = parser.parse_args()
 
-    audit = json.loads(Path(args.audit_json).read_text(encoding="utf-8"))
+    try:
+        audit = json.loads(Path(args.audit_json).read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        print('npm audit: missing or invalid report')
+        return 2
+    if (not isinstance(audit, dict) or audit.get('error') or audit.get('auditReportVersion') != 2
+            or not isinstance(audit.get('vulnerabilities'), dict)):
+        print('npm audit: incomplete or failed report')
+        return 2
+    severity_order = {'info': 0, 'low': 1, 'moderate': 2, 'high': 3, 'critical': 4}
+    if any(not isinstance(entry, dict) or entry.get('severity') not in severity_order
+           or not isinstance(entry.get('via'), list) for entry in audit['vulnerabilities'].values()):
+        print('npm audit: malformed vulnerability entries')
+        return 2
     current = {
         name: {
             "severity": entry.get("severity", "unknown"),
             "range": entry.get("range", ""),
-            "titles": advisory_identity(name, entry)["titles"],
+            "advisories": advisory_identity(name, entry)["titles"],
             "fix_available": bool(entry.get("fixAvailable")),
         }
         for name, entry in audit.get("vulnerabilities", {}).items()
@@ -82,25 +95,28 @@ def main():
     escalated = [
         name for name in current
         if name in baseline
-        and current[name]["severity"] == "critical"
-        and baseline[name]["severity"] != "critical"
+        and severity_order[current[name]['severity']] > severity_order.get(baseline[name]['severity'], -1)
     ]
+    changed = [name for name in current if name in baseline
+               and set(current[name]['advisories']) - set(baseline[name].get('advisories', []))]
     resolved = [name for name in baseline if name not in current]
 
     if resolved:
         print("Advisories resolved since the baseline (update it):")
         for name in resolved:
             print(f"  - {name}")
-    if new or escalated:
+    if new or escalated or changed:
         print("NEW UNREVIEWED ADVISORIES — do not merge without triage:")
         for name in new:
             entry = current[name]
             print(f"  [new] {name} ({entry['severity']}) range={entry['range']}")
-            for title in entry["titles"]:
+            for title in entry["advisories"]:
                 print(f"        {title}")
             print("        fixAvailable:", entry["fix_available"])
         for name in escalated:
-            print(f"  [escalated to critical] {name}")
+            print(f"  [severity escalated] {name}")
+        for name in changed:
+            print(f"  [new advisory in existing package] {name}")
         print("Triage: check applicability (build-time vs runtime), record the "
               "decision in security/docs/findings.md, then refresh the "
               "baseline with --update if accepted.")

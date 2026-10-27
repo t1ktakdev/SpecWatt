@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover - CI installs hypothesis
 
 TERMINAL = {
     "requested", "sent", "acknowledged", "rejected", "timeout",
-    "transport-error", "reconciled",
+    "transport-error", "reconciled", "cancelled",
 }
 STEP_OUTCOMES = ["acknowledged", "timeout", "transport-error"]
 PEAKS = [2.4, 5.0, 6.6, 7.0, 8.4]

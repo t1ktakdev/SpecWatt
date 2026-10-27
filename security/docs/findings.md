@@ -39,31 +39,15 @@ remain valid and tracked upstream.
   acceptable for a local simulator, restore-from-backup procedure is
   documented upstream.
 
-## SEC-002 — Reconciliation has no time-correlation window — **Medium (semantics / UX trust) — documented, owner decision required**
+## SEC-002 — Delayed telemetry falsely reconciles old commands — **Medium — FIXED during integration**
 
-- **Where:** `backend/specwatt_api/app.py`, `telemetry` reconcile loop.
-- **What:** `timeout`/`transport-error` commands are reconciled by *any* later
-  authoritative sample, however distant in time, by comparing the sample to
-  the target. Example: CH1-on times out; an hour later the user separately
-  turns CH1 on and a sample reports 1.8 W; the *old* failed command then
-  transitions to `reconciled` with reason `simulator_telemetry_matches_target`
-  — a status that a UI can legitimately render as "the command worked" even
-  though the correlation is coincidental.
-- **Why not fixed here:** the unbounded "a later sample resolves it" contract
-  is written down in backend/README.md as intended behaviour, and the
-  reconciliation handler is shared surface with the Smart Scheduling agent's
-  area. Changing semantics unilaterally would violate the work-isolation rule.
-- **Suggested direction (for the command-engine owner):** only reconcile from
-  the first authoritative sample after the failure (or bound the sample age
-  relative to `command.created_at`); older samples could leave the command in
-  `timeout`/`transport-error` with an explicit "unresolved" flag. The client
-  contract line "neither reason proves command delivery" already guards the
-  API side.
-- **Pinned by test:** `security/test_reliability_faults.py::test_reconciliation_never_replays_only_reports`
-  documents the current contract (reconcile reports, never actuates). If the
-  semantics change, that test must change deliberately.
+- **Root cause reproduced:** channels-only input was stamped with receipt time and reconciled every old timeout/error. A later opposite command followed by a replay of an older snapshot also replaced the current state with a falsely fresh reading. Scheduler recovery interpreted a matching reconciliation reason as confirmation of its start phase.
+- **Fix:** channels-only simulator injection still refreshes current state, but never changes a historical command result. Recovery requires exact `command_id`, finite acquisition `measured_at`, and positive monotonic `sequence`. The sample must be at most 30 seconds old, acquired strictly after dispatch and within 30 seconds of that dispatch, at or after the current controller measurement, and newer than the persistent telemetry cursor. A newer accepted intent on the channel supersedes the old command. Invalid correlation, replay, and order checks reject atomically before changing state.
+- **Manual priority:** an ambiguous manual dispatch preserves its original hold deadline; recovery never starts a fresh hold from sample arrival.
+- **Regression evidence:** `security/test_telemetry_correlation.py` exercises plain injection, exact correlation, mismatching target, delayed/future/pre-dispatch/replayed/out-of-order samples, later opposite and same-target intents, foreign controller commands, persistence across restart, and manual hold. The original reliability regression deliberately uses the new explicit correlation contract.
+- **Residual limit:** this endpoint is an authenticated simulator input, not physical telemetry authentication. An owner can inject simulator state and supply metadata; the fields do not prove delivery or causation. Reconciliation confirms observed target state only, never a device acknowledgement. Commands outside the recovery window remain timeout/error; a fresh state injection permits a separate, explicit new intent.
 
-## SEC-003 — Five high npm advisories in the Expo toolchain — **Medium (build-time) — baselined, upstream fix required**
+## SEC-003 — Reviewed high npm advisories in the Expo toolchain — **Medium (build-time) — baselined, upstream fix required**
 
 - **Where:** `mobile/specwatt-app` dependency chain `expo → @expo/cli →
   {node-forge, zod}` (npm audit 2026-10-27; analysis matches
@@ -161,3 +145,12 @@ commands without authorisation. High — token/credential compromise paths,
 power-ceiling bypass, false-success actuation. Medium — availability and
 state-integrity defects, build-chain risk, process gaps. Low — consistency,
 hardening and documentation items. Info — limitations worth recording.
+
+## Integration gate review (2026-10-27)
+
+- **KEEP:** original authorship and the isolated authentication/BOLA, CH3, peak, permission, idempotency, concurrency, fault injection and property tests. Original 83 checks passed before integration fixes.
+- **IMPROVE:** mobile source assertions are useful structural tripwires, not behavioral evidence of secure storage, transport or logout. Run the mobile runtime tests as well; do not treat a matching comment/string as verification.
+- **REPLACE:** the unbounded reconciliation loop with acquisition/correlation checks above; npm package-name-only baseline comparisons with advisory URL identities and every severity escalation; CI's unconditional npm audit failure with report validation plus baseline comparison. A network/error report fails closed.
+- **IMPROVE:** history secret scanning now passes dash-prefixed private-key patterns using `-e`, rejects git errors instead of treating them as clean, redacts all matched characters, and uses exact fixture values rather than substring exemptions. Synthetic fixtures missing from the original allowlist were recorded explicitly. Pattern scanning still cannot identify all secret formats or binary/oversized files.
+- **DROP:** claims that all existing source assertions prove runtime security, or that simulator tests establish hardware delivery guarantees. No physical transport exists or was exercised.
+- **Dependency snapshot:** a fresh npm audit with system certificate trust returned four high package entries (`@expo/cli`, `expo`, `node-forge`, `zod`), all within the reviewed baseline. `@expo/code-signing-certificates` no longer appears. Existing accepted identities were migrated to advisory URLs without accepting new issues.
