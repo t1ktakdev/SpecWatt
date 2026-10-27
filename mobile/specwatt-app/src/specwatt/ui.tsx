@@ -1,6 +1,6 @@
+import { MotionPressable as Pressable } from './motion';
 import React from "react";
 import {
-  Pressable,
   Text,
   View,
   ViewStyle,

@@ -1,9 +1,11 @@
+import {BottomSheet} from "@expo/ui";
+import {DeviceVisual} from "../specwatt/device-visual";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useState } from "react";
-import { View, Pressable, TextInput } from "react-native";
+import { View, TextInput } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
-import { Copy, Photo, CTA } from "../specwatt/ui";
+import { Copy, CTA } from "../specwatt/ui";
 import { useSpec } from "../specwatt/store";
-import { imageMap } from "../specwatt/images";
 import { sty, theme } from "../specwatt/theme";
 import {
   Shell,
@@ -90,8 +92,8 @@ export function DeviceScreen() {
           onPress={() => router.push("/journal")}
         />
       </View>
-      <Photo
-        source={imageMap[channel.assigned?.image || "lamp"]}
+      <DeviceVisual
+        scene assignment={channel.assigned} id={channel.id}
         style={{ width: "100%", height: 180, borderRadius: 3, marginTop: 10 }}
       />
       <View style={{ alignItems: "center", gap: 3 }}>
@@ -136,7 +138,7 @@ export function DeviceScreen() {
           />
         </Pressable>
       </View>
-      <HistoryChart />
+      <HistoryChart channelId={channel.id} />
       <RowLink
         icon="bolt"
         title={w("Автопилот", "Автопилот")}
@@ -164,7 +166,7 @@ export function DeviceScreen() {
           onPress={() => setEditing(!editing)}
         />
       )}
-      {editing && (
+      <BottomSheet isPresented={editing} onDismiss={()=>setEditing(false)} snapPoints={["half","full"]} containerColor={theme.surface} contentPadding={20}>
         <Card style={{ gap: 12 }}>
           <Copy>
             {w("Демонстрационное расписание", "Демонстрациялык жадыбал")}
@@ -196,7 +198,7 @@ export function DeviceScreen() {
           {!!error && <Copy style={{ color: theme.error }}>{error}</Copy>}
           <CTA label={w("Сохранить", "Сактоо")} onPress={save} />
         </Card>
-      )}
+      </BottomSheet>
       <RowLink
         icon="settings"
         title={w("Название, помещение, изображение", "Аты, бөлмөсү, сүрөтү")}

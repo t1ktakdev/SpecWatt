@@ -1,11 +1,15 @@
-import React, { useState } from "react";
-import { View, ScrollView, Pressable, TextInput, Switch } from "react-native";
+import {DeviceVisual,defaultDeviceConfig} from "../specwatt/device-visual";
+import {validateIllustrationConfig} from "../specwatt/illustrations";
+import {importDevicePhoto,pruneDevicePhotos} from "../specwatt/photos";
+import {Toggle} from "../specwatt/mobile-ui";
+import { MotionPressable as Pressable } from '../specwatt/motion';
+import React, { useState, useCallback, useRef } from "react";
+import { View, ScrollView, TextInput } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import { Copy, CTA, Panel, Photo } from "../specwatt/ui";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { Copy, CTA, Panel } from "../specwatt/ui";
 import { theme, sty } from "../specwatt/theme";
 import { useSpec, ChannelId, Assign } from "../specwatt/store";
-import { imageMap, imageKeys } from "../specwatt/images";
 import { t } from "../specwatt/i18n";
 type Step = "overview" | "channels" | "assign" | "done";
 const defaults: Assign = {
@@ -18,10 +22,19 @@ const defaults: Assign = {
 export default function Setup() {
   const { data, enterDemo, assign } = useSpec();
   const locale = data.locale;
+  const params=useLocalSearchParams<{channel?:string;illustration?:string}>();
+  const consumed=useRef('');
+  const [importing,setImporting]=useState(false);
+
   const [step, setStep] = useState<Step>("overview");
   const [selected, setSelected] = useState<ChannelId>("CH1");
   const [draft, setDraft] = useState<Assign>(defaults);
   const [error, setError] = useState("");
+  useFocusEffect(useCallback(()=>{
+   if(!params.channel||!['CH1','CH2','CH3'].includes(params.channel)||!params.illustration)return;
+   const key=params.channel+params.illustration;if(consumed.current===key)return;consumed.current=key;
+   try{const config=validateIllustrationConfig(JSON.parse(params.illustration));if(!config)return;const id=params.channel as ChannelId;setSelected(id);setDraft(d=>({...d,appearance:{kind:'vector',config}}));setStep('assign');}catch{}
+  },[params.channel,params.illustration]));
   const words = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
   function pickChannel(ch: ChannelId) {
     const channel = data.channels.find((c) => c.id === ch);
@@ -45,8 +58,15 @@ export default function Setup() {
       return;
     }
     assign(selected, { ...draft, name: draft.name.trim() });
+    try{pruneDevicePhotos([...data.channels.filter(c=>c.id!==selected).flatMap(c=>c.assigned?.appearance?.kind==='photo'?[c.assigned.appearance.uri]:[]),...(draft.appearance?.kind==='photo'?[draft.appearance.uri]:[])]);}catch{}
     setError("");
     setStep("done");
+  }
+  async function choosePhoto(){
+    setImporting(true);setError('');
+    try{const uri=await importDevicePhoto();if(uri)setDraft(d=>({...d,appearance:{kind:'photo',uri}}));}
+    catch{setError(words('Не удалось импортировать фото. Выберите JPG/PNG до 15 МБ; импорт доступен на Android.','Сүрөт импорттолгон жок. 15 МБ чейин JPG/PNG тандаңыз; импорт Androidдо жеткиликтүү.'));}
+    finally{setImporting(false);}
   }
   return (
     <SafeAreaView style={sty.screen}>
@@ -173,8 +193,7 @@ export default function Setup() {
                           )}
                     </Copy>
                   </View>
-                  <Photo
-                    source={imageMap[value?.image || "lamp"]}
+                  <DeviceVisual assignment={value} id={id}
                     style={{ width: 105, height: 103, borderRadius: 16 }}
                   />
                 </Pressable>
@@ -226,49 +245,10 @@ export default function Setup() {
                 "Категория жана даяр сүрөттөр",
               )}
             </Copy>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 12 }}
-            >
-              {imageKeys.map((id) => (
-                <Pressable
-                  accessibilityRole="button"
-                  key={id}
-                  onPress={() =>
-                    setDraft((d) => ({ ...d, category: id, image: id }))
-                  }
-                  style={{
-                    width: 132,
-                    backgroundColor:
-                      draft.image === id ? theme.raised : theme.surface,
-                    borderColor: draft.image === id ? theme.peach : theme.line,
-                    borderWidth: 1,
-                    borderRadius: 19,
-                    padding: 6,
-                    gap: 7,
-                  }}
-                >
-                  <Photo
-                    source={imageMap[id]}
-                    style={{ width: 118, height: 115, borderRadius: 14 }}
-                  />
-                  <Copy size={13} style={{ textAlign: "center" }}>
-                    {
-                      {
-                        lamp: words("Светильник", "Чырак"),
-                        "led-strip": words("LED-лента", "LED тасма"),
-                        fan: words("Вентилятор", "Желдеткич"),
-                        charger: words("Зарядка", "Кубаттагыч"),
-                        socket: words("Розетка", "Розетка"),
-                        appliance: words("Техника", "Техника"),
-                        "lamp-scene": words("Светильник", "Чырак"),
-                      }[id]
-                    }
-                  </Copy>
-                </Pressable>
-              ))}
-            </ScrollView>
+            <DeviceVisual assignment={draft} id={selected} scene style={{height:200,width:'100%',borderRadius:22}}/>
+            <CTA secondary label={words('Каталог SVG и конструктор','SVG каталогу жана конструктор')} onPress={()=>router.push({pathname:'/catalog',params:{channel:selected,illustration:JSON.stringify(draft.appearance?.kind==='vector'?draft.appearance.config:defaultDeviceConfig(selected,draft.image))}})}/>
+            <CTA secondary disabled={importing} label={importing?words('Импортируем…','Импорттолууда…'):words('Использовать свою фотографию','Өз сүрөтүмдү колдонуу')} onPress={choosePhoto}/>
+            <Copy muted size={12}>{words('Выбор иллюстрации не меняет возможности канала.','Сүрөт тандоо каналдын мүмкүнчүлүгүн өзгөртпөйт.')}</Copy>
             <Copy size={15}>{t(locale, "room")}</Copy>
             <TextInput
               maxLength={80}
@@ -297,17 +277,16 @@ export default function Setup() {
                         )}
                   </Copy>
                 </View>
-                <Switch
-                  accessibilityLabel={words(
+                <Toggle
+                  label={words(
                     "Разрешить автопилот",
                     "Автопилотко уруксат",
                   )}
                   value={selected !== "CH3" && draft.allowAuto}
                   disabled={selected === "CH3"}
-                  onValueChange={(value) =>
+                  onChange={(value) =>
                     setDraft((d) => ({ ...d, allowAuto: value }))
                   }
-                  trackColor={{ true: theme.peach, false: theme.line }}
                 />
               </View>
             </Panel>
@@ -322,8 +301,7 @@ export default function Setup() {
         {step === "done" && (
           <>
             <Copy size={30}>{t(locale, "done")}</Copy>
-            <Photo
-              source={imageMap[draft.image]}
+            <DeviceVisual assignment={draft} id={selected} scene
               style={{ width: "100%", height: 235, borderRadius: 24 }}
             />
             <Panel style={{ gap: 6 }}>

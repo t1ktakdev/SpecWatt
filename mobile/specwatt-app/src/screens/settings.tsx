@@ -1,5 +1,7 @@
+import {clearDevicePhotos} from "../specwatt/photos";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useState } from "react";
-import { View, TextInput, Pressable, Share } from "react-native";
+import { View, TextInput, Share } from "react-native";
 import { router } from "expo-router";
 import { Copy, CTA } from "../specwatt/ui";
 import { useSpec } from "../specwatt/store";
@@ -113,6 +115,7 @@ export function SettingsScreen() {
           </Copy>
         )}
       </Card>
+      <RowLink icon="plug" title={w("SVG-каталог устройств","Түзмөктөрдүн SVG каталогу")} subtitle={w("119 категорий · офлайн-конструктор","119 категория · офлайн-конструктор")} onPress={()=>router.push("/catalog")}/>
       <RowLink
         icon="plug"
         title={w("Контроллер и разрешения", "Контроллер жана уруксаттар")}
@@ -215,7 +218,8 @@ export function SettingsScreen() {
             <CTA
               label={w("Удалить демоданные", "Демо маалыматты өчүрүү")}
               onPress={() => {
-                leaveDemo();
+                try{clearDevicePhotos();}catch{}
+                      leaveDemo();
                 router.replace("/home");
               }}
             />

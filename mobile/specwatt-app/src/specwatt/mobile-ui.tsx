@@ -1,12 +1,14 @@
-import React from "react";
+import React,{useMemo} from "react";
+import { createDemoHistory,integratePower } from "./energy";
+import type { ChannelId } from "./model";
+import Animated from "react-native-reanimated";
+import { MotionPressable as Pressable, Reveal, AnimatedSelection, AnimatedMetric, TracePath, ChartBar, useToggleMotion } from "./motion";
+import { normalizedPower } from "./motion-tokens";
 import {
   View,
   ScrollView,
-  Pressable,
   StyleSheet,
-  Switch,
   ViewStyle,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, usePathname } from "expo-router";
@@ -14,7 +16,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import Svg, {
   Path,
   Circle,
-  Rect,
   Line,
   Text as SvgLabel,
 } from "react-native-svg";
@@ -132,7 +133,8 @@ export function Shell({
     );
   return (
     <LinearGradient
-      colors={["#27251F", "#151815", "#141714", "#24231E"]}
+      colors={["#252420", "#171917", "#141513", "#25231E"]}
+      locations={[0,.25,.8,1]}
       style={{ flex: 1 }}
     >
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
@@ -141,6 +143,7 @@ export function Shell({
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+          <Reveal style={{gap:12}}>
           {!!storageError && (
             <View accessibilityRole="alert" style={s.warning}>
               <Copy size={12}>
@@ -168,6 +171,7 @@ export function Shell({
             </View>
           )}
           {children}
+          </Reveal>
         </ScrollView>
         <BottomNav active={active} />
       </SafeAreaView>
@@ -197,15 +201,13 @@ function BottomNav({ active }: { active?: string }) {
             accessibilityLabel={w(ru, ky)}
             style={s.navItem}
           >
-            <View
-              style={[s.navIcon, selected && { backgroundColor: theme.peach }]}
-            >
+            <AnimatedSelection selected={selected} style={s.navIcon}>
               <Icon
                 name={icon}
                 color={selected ? theme.ink : theme.dim}
                 size={23}
               />
-            </View>
+            </AnimatedSelection>
             <Copy
               size={12}
               style={{
@@ -268,64 +270,13 @@ export function Brand() {
     </>
   );
 }
-export function Toggle({
-  value,
-  onChange,
-  label,
-  disabled = false,
-}: {
-  value: boolean;
-  onChange: (x: boolean) => void;
-  label: string;
-  disabled?: boolean;
-}) {
-  if (Platform.OS === "web")
-    return (
-      <Pressable
-        accessibilityRole="switch"
-        accessibilityLabel={label}
-        accessibilityState={{ checked: value, disabled }}
-        disabled={disabled}
-        onPress={() => onChange(!value)}
-        style={{
-          minHeight: 44,
-          minWidth: 64,
-          justifyContent: "center",
-          opacity: disabled ? 0.45 : 1,
-        }}
-      >
-        <View
-          style={{
-            width: 61,
-            height: 30,
-            borderRadius: 18,
-            backgroundColor: value ? theme.peach : "#3A3E3B",
-            padding: 3,
-            alignItems: value ? "flex-end" : "flex-start",
-          }}
-        >
-          <View
-            style={{
-              height: 24,
-              width: 24,
-              borderRadius: 15,
-              backgroundColor: "white",
-            }}
-          />
-        </View>
-      </Pressable>
-    );
-  return (
-    <Switch
-      accessibilityLabel={label}
-      value={value}
-      onValueChange={onChange}
-      disabled={disabled}
-      trackColor={{ true: theme.peach, false: "#3A3E3B" }}
-      thumbColor="#FFFFFF"
-      style={{ opacity: disabled ? 0.45 : 1 }}
-    />
-  );
+export function Toggle({value,onChange,label,disabled=false}:{value:boolean;onChange:(value:boolean)=>void;label:string;disabled?:boolean}){
+ const {thumb}=useToggleMotion(value);
+ return <Pressable accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{checked:value,disabled}} disabled={disabled} onPress={()=>onChange(!value)} hitSlop={4} style={{height:44,width:64,justifyContent:'center',opacity:disabled?.45:1}}>
+  <View style={{width:62,height:31,borderRadius:18,backgroundColor:value?theme.peach:'#3A3E3B',padding:3,borderWidth:1,borderColor:value?'#B4804F':'#494C46'}}>
+   <Animated.View style={[{height:23,width:23,borderRadius:13,backgroundColor:'#FFFFFF'},thumb]}/>
+  </View>
+ </Pressable>;
 }
 export function Card({
   children,
@@ -405,124 +356,36 @@ export function Chips({
     </View>
   );
 }
-export function Gauge({
-  value,
-  label,
-  subtitle,
-  bolt = false,
-}: {
-  value: string;
-  label?: string;
-  subtitle: string;
-  bolt?: boolean;
-}) {
-  return (
-    <View
-      style={{
-        height: 193,
-        justifyContent: "flex-end",
-        alignItems: "center",
-        paddingBottom: 7,
-      }}
-    >
-      <Svg
-        width="100%"
-        height={185}
-        viewBox="0 0 340 185"
-        style={{ position: "absolute", top: 0 }}
-      >
-        <Path
-          d="M28 153 A142 142 0 0 1 183 12"
-          stroke="#484B43"
-          strokeWidth={16}
-          strokeLinecap="round"
-          fill="none"
-        />
-        <Path
-          d="M202 15 A142 142 0 0 1 238 31 M257 44 A142 142 0 0 1 286 76 M300 100 A142 142 0 0 1 312 153"
-          stroke={theme.peach}
-          strokeWidth={16}
-          strokeLinecap="round"
-          fill="none"
-        />
-      </Svg>
-      {bolt ? (
-        <Icon name="bolt" size={43} color={theme.peach} />
-      ) : (
-        <Copy muted size={13}>
-          {label}
-        </Copy>
-      )}
-      <Copy size={bolt ? 33 : 57} style={{ marginTop: bolt ? 7 : 0 }}>
-        {value}
-      </Copy>
-      <Copy size={13} muted>
-        {subtitle}
-      </Copy>
-    </View>
-  );
+export function Gauge({value,label,subtitle,bolt=false,power,limit=7}:{value:string;label?:string;subtitle:string;bolt?:boolean;power?:number|null;limit?:number}){
+ const ratio=normalizedPower(power===undefined?4.2:power,limit);
+ return <View style={{height:190,justifyContent:'flex-end',alignItems:'center',paddingBottom:5}}>
+  <Svg width="100%" height={176} viewBox="0 0 340 180" style={{position:'absolute',top:0}}>
+   <Path d="M28 153 A142 142 0 0 1 312 153" stroke="#484B43" strokeWidth={16} strokeLinecap="round" fill="none"/>
+   <TracePath d="M312 153 A142 142 0 0 0 28 153" progress={ratio??0} length={446.2} stroke={theme.peach} strokeWidth={16} strokeLinecap="round" fill="none"/>
+   <Path d="M286 76L300 66 M254 38L264 23 M204 14L208 0" stroke="#1B1D19" strokeWidth={7}/>
+  </Svg>
+  {bolt?<Icon name="bolt" size={43} color={theme.peach}/>:<Copy muted size={13}>{label}</Copy>}
+  {!bolt&&power!==undefined?<View style={{flexDirection:'row',alignItems:'baseline',gap:7}}><AnimatedMetric value={power} accessibilityLabel={`${power??'—'} Вт`} style={{fontFamily:theme.font,fontSize:57,color:theme.text,width:128,textAlign:'right',height:72}}/><Copy size={33}>Вт</Copy></View>:<Copy size={bolt?33:57} style={{marginTop:bolt?7:0}}>{value}</Copy>}
+  <Copy size={13} muted>{subtitle}</Copy>
+ </View>;
 }
-// Fixed demo history, explicitly labelled; current readings come from the store.
-export function HistoryChart() {
-  const w = useWords();
-  const bars = [
-    1.4, 1.8, 1.2, 1, 1.4, 0.9, 1, 1.3, 1.8, 2.4, 2.6, 3, 3.5, 3.1, 2.2, 2.7,
-    3.6, 2.7, 3.6, 5, 5.4, 3.7, 1.3,
-  ];
-  return (
-    <Card style={{ padding: 14, gap: 8 }}>
-      <View style={s.between}>
-        <Copy size={14}>{w("Нагрузка сегодня", "Бүгүнкү жүктөм")}</Copy>
-        <Copy muted size={12}>
-          {w("Вт · демо", "Вт · демо")}
-        </Copy>
-      </View>
-      <Svg
-        preserveAspectRatio="none"
-        width="100%"
-        height={83}
-        viewBox="0 0 350 83"
-      >
-        {[0, 2, 4, 6].map((n) => (
-          <React.Fragment key={n}>
-            <Line
-              x1={23}
-              y1={68 - n * 10}
-              x2={348}
-              y2={68 - n * 10}
-              stroke="#33362F"
-            />
-            <SvgText n={n} />
-          </React.Fragment>
-        ))}
-        {bars.map((n, i) => (
-          <Rect
-            key={i}
-            x={26 + i * 13.7}
-            y={68 - n * 10}
-            width={9}
-            height={n * 10}
-            rx={1.5}
-            fill={i >= 16 && i <= 20 ? theme.peach : "#494D43"}
-          />
-        ))}
-      </Svg>
-      <View style={[s.between, { paddingLeft: 22 }]}>
-        {["00", "04", "08", "12", "16", "20"].map((x) => (
-          <Copy key={x} size={12} muted style={{ fontSize: 10 }}>
-            {x}
-          </Copy>
-        ))}
-      </View>
-    </Card>
-  );
-}
-function SvgText({ n }: { n: number }) {
-  return (
-    <SvgLabel x={2} y={71 - n * 10} fill={theme.dim} fontSize={9}>
-      {n}
-    </SvgLabel>
-  );
+export function HistoryChart({channelId}:{channelId?:ChannelId}={}) {
+ const {data}=useSpec(),w=useWords();
+ const history=useMemo(()=>data.source==='demo'&&data.channels.length===3?createDemoHistory(data.channels):null,[data.source,data.channels]);
+ if(!history)return <Card><Copy muted>{w('История измерений пока недоступна','Өлчөөлөрдүн тарыхы азырынча жок')}</Copy></Card>;
+ const samples=channelId?history.byChannel[channelId]:history.samples;
+ const summary=channelId?integratePower(samples,{maxGapMs:3600000}):history.summary;
+ const bars=samples.slice(0,-1),max=Math.max(2,Math.ceil((summary.peakW??0)/2)*2),height=66;
+ const label=(at:number)=>new Date(at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bishkek'});
+ return <Card style={{padding:14,gap:7}}>
+  <View style={s.between}><Copy size={14}>{w('Нагрузка сегодня','Бүгүнкү жүктөм')}</Copy><Copy muted size={12}>{w('Вт · демо','Вт · демо')}</Copy></View>
+  <Svg width="100%" height={88} viewBox="0 0 350 88" preserveAspectRatio="none" accessibilityLabel={w('Модельная история за 12 часов','12 сааттык үлгү тарых')}>
+   {[0,1,2,3].map(i=>{const n=i*max/3;return <React.Fragment key={i}><Line x1={23} x2={348} y1={height-n/max*height+5} y2={height-n/max*height+5} stroke="#32352D"/><SvgLabel x={2} y={height-n/max*height+8} fill={theme.dim} fontSize={9}>{n.toFixed(0)}</SvgLabel></React.Fragment>;})}
+   {bars.map((sample,i)=><ChartBar key={sample.at} x={27+i*13.2} width={9} height={(sample.watts??0)/max*height} baseline={height+5} rx={1.6} fill={i>=bars.length-7&&i<bars.length-2?theme.peach:'#44483F'}/>)}
+  </Svg>
+  <View style={s.between}>{[0,6,12,18,24].map(i=><Copy key={i} size={12} muted style={{fontSize:10}}>{label(samples[i].at)}</Copy>)}</View>
+  <View style={s.between}><Copy size={12} muted>{w('Демо · 12 ч','Демо · 12 саат')} · {summary.complete?summary.observedWh.toFixed(1).replace('.',','):'—'} {'Wh'}</Copy><Copy size={12} muted>{w('Пик','Чоку')} {formatW(summary.peakW)} Вт</Copy></View>
+ </Card>;
 }
 export function ComparisonChart({
   before,
@@ -572,7 +435,8 @@ export function ComparisonChart({
             <React.Fragment key={label}>
               {[before[i], after[i]].map((v, j) => (
                 <React.Fragment key={j}>
-                  <Rect
+                  <ChartBar
+                    baseline={155}
                     x={32 + i * 80 + j * 26}
                     y={155 - (v / max) * 130}
                     width={23}
@@ -637,7 +501,7 @@ export function Empty() {
   );
 }
 export const formatW = (n: number | null) =>
-  n === null ? "—" : n.toFixed(1).replace(".", ",");
+  n === null ? "—" : n===0?"0":n.toFixed(1).replace(".", ",");
 export const s = StyleSheet.create({
   body: {
     paddingHorizontal: 24,
@@ -645,7 +509,7 @@ export const s = StyleSheet.create({
     paddingBottom: 20,
     gap: 12,
     width: "100%",
-    maxWidth: 560,
+    maxWidth: 440,
     alignSelf: "center",
   },
   header: {
@@ -685,8 +549,8 @@ export const s = StyleSheet.create({
     flexDirection: "row",
     borderWidth: 1,
     borderColor: "#3C4037",
-    borderRadius: 25,
-    backgroundColor: "#24261F",
+    borderRadius: 26,
+    backgroundColor: "#242522",
     maxWidth: 542,
     width: "93%",
     alignSelf: "center",

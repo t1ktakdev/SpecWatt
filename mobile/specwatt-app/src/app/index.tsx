@@ -1,8 +1,8 @@
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   ScrollView,
-  Pressable,
   TextInput,
   KeyboardAvoidingView,
   Platform,

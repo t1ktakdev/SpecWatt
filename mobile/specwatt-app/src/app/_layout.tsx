@@ -1,3 +1,6 @@
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { MotionProvider } from "../specwatt/motion";
+import { motion } from "../specwatt/motion-tokens";
 import React, { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import { useFonts } from "expo-font";
@@ -10,7 +13,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function Layout() {
   const [loaded, fontError] = useFonts({
-    Manrope: require("../assets/specwatt/Manrope.ttf"),
+    Arimo: require("../assets/specwatt/Arimo.ttf"),
   });
   const [complete, setComplete] = useState(false);
   const [opacity] = useState(() => new Animated.Value(1));
@@ -20,10 +23,10 @@ export default function Layout() {
     // An actual animated native brand transition, not an interactive onboarding card.
     let active = true;
     const animation = Animated.sequence([
-      Animated.delay(500),
+      Animated.delay(120),
       Animated.timing(opacity, {
         toValue: 0,
-        duration: 650,
+        duration: motion.duration.reveal,
         useNativeDriver: true,
       }),
     ]);
@@ -47,18 +50,21 @@ export default function Layout() {
   if (!loaded && !fontError)
     return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
   return (
-    <SpecProvider>
+    <GestureHandlerRootView style={{flex:1}}><MotionProvider><SpecProvider>
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
         <Stack
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: theme.bg },
             animation: "fade",
+            animationDuration: motion.duration.standard,
           }}
         >
           <Stack.Screen name="index" />
           <Stack.Screen name="setup" />
           <Stack.Screen name="home" />
+          <Stack.Screen name="device" options={{animation:"slide_from_right"}}/>
+          <Stack.Screen name="catalog" options={{animation:"slide_from_bottom"}}/>
         </Stack>
         {!complete && (
           <Animated.View
@@ -89,7 +95,7 @@ export default function Layout() {
             >
               <Text
                 style={{
-                  fontFamily: "Manrope",
+                  fontFamily: "Arimo",
                   fontSize: 73,
                   color: theme.peach,
                 }}
@@ -99,7 +105,7 @@ export default function Layout() {
             </View>
             <Text
               style={{
-                fontFamily: "Manrope",
+                fontFamily: "Arimo",
                 fontSize: 20,
                 letterSpacing: 1.5,
                 color: theme.text,
@@ -111,6 +117,6 @@ export default function Layout() {
           </Animated.View>
         )}
       </View>
-    </SpecProvider>
+    </SpecProvider></MotionProvider></GestureHandlerRootView>
   );
 }

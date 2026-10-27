@@ -1,9 +1,10 @@
+import {DeviceVisual} from "../specwatt/device-visual";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useState } from "react";
-import { View, Pressable } from "react-native";
+import { View } from "react-native";
 import { router } from "expo-router";
-import { Copy, Photo } from "../specwatt/ui";
+import { Copy } from "../specwatt/ui";
 import { useSpec, totalPower, Channel } from "../specwatt/store";
-import { imageMap } from "../specwatt/images";
 import {
   Shell,
   Header,
@@ -38,6 +39,7 @@ export function HomeScreen() {
         <>
           <Gauge
             label={w("Сейчас", "Азыр")}
+            power={totalPower(data.channels)} limit={data.peak}
             value={`${formatW(totalPower(data.channels))} Вт`}
             subtitle={`${data.channels.filter((c) => (c.watts ?? 0) > 0).length} ${w("из", "/")} ${data.channels.length} ${w("каналов", "канал")}`}
           />
@@ -66,8 +68,8 @@ export function HomeScreen() {
                     </Copy>
                   </Copy>
                 </View>
-                <Photo
-                  source={imageMap[ch.assigned?.image || "lamp"]}
+                <DeviceVisual
+                  scene assignment={ch.assigned} id={ch.id}
                   style={{
                     position: "absolute",
                     top: 64,
@@ -95,8 +97,8 @@ export function HomeScreen() {
                 }
                 style={[s.link, { minHeight: 103, padding: 8 }]}
               >
-                <Photo
-                  source={imageMap[ch.assigned?.image || "fan"]}
+                <DeviceVisual
+                  assignment={ch.assigned} id={ch.id}
                   style={{ width: 113, height: 88, borderRadius: 12 }}
                 />
                 <View style={{ flex: 1, gap: 4 }}>
@@ -199,8 +201,8 @@ function DeviceCard({ channel: ch }: { channel: Channel }) {
           width: "54%",
         }}
       >
-        <Photo
-          source={imageMap[ch.assigned?.image || "lamp"]}
+        <DeviceVisual
+          scene assignment={ch.assigned} id={ch.id}
           style={{ width: "100%", height: "100%" }}
         />
       </Pressable>

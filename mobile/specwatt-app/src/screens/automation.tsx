@@ -1,10 +1,11 @@
+import {DeviceVisual} from "../specwatt/device-visual";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useEffect, useState } from "react";
-import { View, Pressable } from "react-native";
+import { View } from "react-native";
 import { router } from "expo-router";
-import { Copy, CTA, Photo } from "../specwatt/ui";
+import { Copy, CTA } from "../specwatt/ui";
 import { useSpec } from "../specwatt/store";
 import { getPlan } from "../specwatt/model";
-import { imageMap } from "../specwatt/images";
 import {
   Shell,
   Header,
@@ -130,8 +131,8 @@ export function AutopilotScreen() {
             onPress={() => router.replace("/plan")}
             style={[s.card, { padding: 0, minHeight: 148 }]}
           >
-            <Photo
-              source={imageMap["led-strip"]}
+            <DeviceVisual
+              assignment={data.channels.find(c=>c.id==="CH2")?.assigned} id="CH2"
               style={{
                 position: "absolute",
                 right: 0,
@@ -258,8 +259,8 @@ export function PlanScreen() {
               { padding: 0, flexDirection: "row", minHeight: 113 },
             ]}
           >
-            <Photo
-              source={imageMap["led-strip"]}
+            <DeviceVisual
+              assignment={data.channels.find(c=>c.id==="CH2")?.assigned} id="CH2"
               style={{ width: "39%", height: 113 }}
             />
             <View style={{ flex: 1, padding: 13, gap: 6 }}>
@@ -300,9 +301,10 @@ export function PlanScreen() {
               <Copy muted size={12}>
                 {w(
                   "Перенос не означает снижение расхода кВт·ч.",
-                  "Жылдыруу кВт·с сарптоону азайтууну билдирбейт.",
+                  "Жылдыруу энергия сарптоону азайтууну билдирбейт.",
                 )}
               </Copy>
+              {plan.beforeEnergyWh!==undefined&&plan.afterEnergyWh!==undefined&&<Copy size={12} muted>{w('Энергия окна','Убакыт терезесиндеги энергия')}: {plan.beforeEnergyWh.toFixed(1).replace('.',',')} → {plan.afterEnergyWh.toFixed(1).replace('.',',')} Wh</Copy>}
             </View>
           </Card>
           <Copy size={12} muted>
