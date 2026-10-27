@@ -20,11 +20,15 @@ import { Copy, CTA, Panel } from "../specwatt/ui";
 import { sty, theme } from "../specwatt/theme";
 import { useSpec } from "../specwatt/store";
 import ServerSchedules from "./server-schedules";
-import { createServerRequestScope, isSessionFailure } from "../specwatt/server-request-scope";
+import {
+  createServerRequestScope,
+  appendCommand,
+  blocksNewCommands,
+  isAmbiguousMutationOutcome,
+  isSnapshotFresh,
+  isSessionFailure,
+} from "../specwatt/server-request-scope";
 import type { ServerSession } from "../specwatt/server-request-scope";
-
-const unresolved = (command: ServerCommand) =>
-  ["requested", "sent", "timeout", "transport-error"].includes(command.status);
 
 export default function ServerScreen() {
   const { data } = useSpec();
@@ -84,11 +88,7 @@ export default function ServerScreen() {
       if (startedSession && !scope.isSession(startedSession)) return;
       const code =
         failure instanceof ApiError ? failure.code : "operation_failed";
-      if (
-        commandAction &&
-        ["request_timeout", "network_error", "invalid_response"].includes(code)
-      )
-        setUncertain(true);
+      if (commandAction && isAmbiguousMutationOutcome(code)) setUncertain(true);
       if (isSessionFailure(code)) clearSession(startedSession);
       if (mounted.current) setError(code);
     } finally {
@@ -100,10 +100,11 @@ export default function ServerScreen() {
   useEffect(() => {
     mounted.current = true;
     const restored = scope.activate(initial);
+    const flight = scope.begin();
     void (async () => {
       try {
         if (!(await initial.hasSession())) return;
-        const rows = await initial.controllers();
+        const rows = await initial.controllers({ signal: flight.signal });
         if (mounted.current && scope.isSession(restored)) {
           setSession(restored);
           setControllers(rows);
@@ -113,32 +114,47 @@ export default function ServerScreen() {
           setError(
             failure instanceof ApiError ? failure.code : "operation_failed",
           );
+      } finally {
+        flight.done();
       }
     })();
     return () => {
       mounted.current = false;
+      flight.done();
       scope.invalidate();
     };
   }, [initial, scope]);
 
+  const hasSnapshot = snapshot !== null;
   useEffect(() => {
+    // Freshness display only matters while a snapshot is on screen; ticking
+    // every second otherwise re-renders the whole workspace for nothing.
+    if (!hasSnapshot) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [hasSnapshot]);
 
   async function refresh(id: string, expected = session, select = false) {
     const ticket = select ? scope.select(expected, id) : scope.refresh(expected, id);
     if (!ticket || !expected) return;
     const connection = expected.connection;
-    const value = await connection.snapshot(id);
-    const history = await connection.commands(id);
-    if (!mounted.current || !scope.canCommit(ticket)) return;
-    setSnapshot(value);
-    setCommands(history);
-    setUncertain(false);
+    const flight = scope.begin();
+    try {
+      const value = await connection.snapshot(id, { signal: flight.signal });
+      const history = await connection.commands(id, { signal: flight.signal });
+      if (!mounted.current || !scope.canCommit(ticket)) return;
+      setSnapshot(value);
+      setCommands(history);
+      setUncertain(false);
+    } finally {
+      flight.done();
+    }
   }
 
-  const messages: Record<string, string> = {
+  const locale = data.locale;
+  const messages = useMemo<Record<string, string>>(() => {
+    const w = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
+    return {
     invalid_url: w(
       "Нужен HTTPS-адрес без пути, логина и параметров. В разработке HTTP разрешён только для localhost, 127.0.0.1, ::1 и 10.0.2.2.",
       "Жолу жана параметрлери жок HTTPS дарек керек. Иштеп чыгууда HTTP localhost, 127.0.0.1, ::1 жана 10.0.2.2 үчүн гана уруксат.",
@@ -236,7 +252,28 @@ export default function ServerScreen() {
       "По телеметрии целевое состояние не достигнуто. Команда завершена без подтверждения выполнения.",
       "Телеметрия боюнча максаттуу абалга жеткен жок. Буйрук аткарылганы ырасталбастан аяктады.",
     ),
-  };
+    command_in_flight: w(
+      "Предыдущая команда ещё не завершена на сервере. Дождитесь её результата или обновите историю.",
+      "Мурунку буйрук серверде аякта элек. Анын жыйынтыгын күтүңүз же тарыхты жаңыртыңыз.",
+    ),
+    controller_not_found: w(
+      "Симулятор не найден или удалён на сервере. Обновите список симуляторов.",
+      "Симулятор табылган жок же серверден өчүрүлгөн. Симуляторлор тизмесин жаңыртыңыз.",
+    ),
+    server_busy: w(
+      "Сервер перегружен. Повторите попытку позже.",
+      "Сервер жүктөлүп калды. Кийин кайталаңыз.",
+    ),
+    schedule_cancelled: w(
+      "Отменено до отправки: расписание было отменено.",
+      "Жөнөтүлгөнгө чейин жокко чыгарылды: график жокко чыгарылган.",
+    ),
+    http_404: w(
+      "Сервер не нашёл запрошенный объект. Обновите состояние.",
+      "Сервер сураган объектти тапкан жок. Абалды жаңыртыңыз.",
+    ),
+    };
+  }, [locale]);
   const status = (value: string) =>
     ({
       requested: w("Запрошена", "Суралды"),
@@ -248,9 +285,12 @@ export default function ServerScreen() {
       "transport-error": w("Ошибка передачи", "Жөнөтүү катасы"),
       reconciled: w("Сверена с телеметрией", "Телеметрия менен текшерилди"),
     })[value] ?? value;
-  const waiting = commands.some(unresolved) || uncertain;
-  const measuredFresh =
-    snapshot?.freshness === "fresh" && now / 1000 - snapshot.measured_at <= 30;
+  // Terminal timeout/transport-error outcomes stay visible in the history but
+  // must not lock the workspace forever: the server only refuses new commands
+  // while one is genuinely in flight (requested/sent).
+  const waiting =
+    commands.some((command) => blocksNewCommands(command.status)) || uncertain;
+  const measuredFresh = isSnapshotFresh(snapshot, now / 1000);
 
   return (
     <SafeAreaView style={sty.screen}>
@@ -515,6 +555,7 @@ export default function ServerScreen() {
                           }
                           onPress={() => {
                             void run(async () => {
+                              const ticket = scope.refresh(session, snapshot.controller_id);
                               const key = `mobile-${Date.now()}-${++serial.current}`;
                               const command = await client.command(
                                 snapshot.controller_id,
@@ -522,7 +563,8 @@ export default function ServerScreen() {
                                 !(channel.watts! > 0),
                                 key,
                               );
-                              setCommands((current) => [command, ...current]);
+                              if (!scope.canCommit(ticket)) return;
+                              setCommands((current) => appendCommand(current, command));
                             }, true);
                           }}
                         />
@@ -536,10 +578,13 @@ export default function ServerScreen() {
                             : w("Разрешить автоматизацию и расписания", "Автоматикага жана жадыбалга уруксат берүү")}
                           onPress={() => {
                             void run(async () => {
-                              setSnapshot(await client.automationConsent(
+                              const ticket = scope.refresh(session, snapshot.controller_id);
+                              const next = await client.automationConsent(
                                 snapshot.controller_id, channel, !channel.assigned.allow_auto,
-                              ));
-                            });
+                              );
+                              if (!scope.canCommit(ticket)) return;
+                              setSnapshot(next);
+                            }, true);
                           }}
                         />
                       )}
@@ -564,10 +609,12 @@ export default function ServerScreen() {
                     )}
                     onPress={() => {
                       void run(async () => {
-                        setSnapshot(await client.step(snapshot.controller_id));
-                        setCommands(
-                          await client.commands(snapshot.controller_id),
-                        );
+                        const ticket = scope.refresh(session, snapshot.controller_id);
+                        const next = await client.step(snapshot.controller_id);
+                        const history = await client.commands(snapshot.controller_id);
+                        if (!scope.canCommit(ticket)) return;
+                        setSnapshot(next);
+                        setCommands(history);
                       }, true);
                     }}
                   />
@@ -591,14 +638,17 @@ export default function ServerScreen() {
                     )}
                     onPress={() => {
                       void run(async () => {
-                        setSnapshot(
-                          await client.sample(snapshot.controller_id, snapshot),
+                        const ticket = scope.refresh(session, snapshot.controller_id);
+                        const next = await client.sample(
+                          snapshot.controller_id,
+                          snapshot,
                         );
-                        setCommands(
-                          await client.commands(snapshot.controller_id),
-                        );
+                        const history = await client.commands(snapshot.controller_id);
+                        if (!scope.canCommit(ticket)) return;
+                        setSnapshot(next);
+                        setCommands(history);
                         setUncertain(false);
-                      });
+                      }, true);
                     }}
                   />
                   <Copy muted size={12}>
