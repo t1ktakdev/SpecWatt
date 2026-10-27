@@ -264,6 +264,108 @@ test("every bundled image id renders through the bundled branch, never a broken 
   resetState();
 });
 
+test("a failing bundled asset degrades to its vector and is never re-requested", () => {
+  const { exports, catalogExports, imageMap, resetState, rewind } = loadDeviceVisual();
+  // Every bundled id must fall back to the vector its image maps to.
+  const expectedCategory = {
+    lamp: "mushroom-lamp",
+    "led-strip": "led-strip",
+    fan: "pc-fan",
+    charger: "phone-charger",
+    socket: "smart-socket",
+    appliance: "kettle",
+    "lamp-scene": "mushroom-lamp",
+  };
+  for (const image of Object.keys(imageMap)) {
+    resetState();
+    const assignment = { name: "x", category: image, image, room: "", allowAuto: false };
+    const initial = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
+    assert.equal(initial.type, "Image", image);
+    assert.equal(initial.props.source, imageMap[image], image);
+    initial.props.onError();
+    rewind();
+    const degraded = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
+    assert.equal(degraded.type, "Vector", `${image}: decode failure must reach the vector`);
+    assert.equal(
+      degraded.props.config.categoryId,
+      expectedCategory[image],
+      `${image}: fallback vector must match the bundled subject`,
+    );
+    // Further renders keep the vector: the broken source is not retried.
+    for (let i = 0; i < 3; i++) {
+      rewind();
+      const again = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
+      assert.equal(again.type, "Vector", `${image}: render ${i + 2} must not re-mount the broken image`);
+    }
+  }
+  resetState();
+});
+
+test("switching to another bundled asset after a failure is not poisoned by stale state", () => {
+  const { exports, imageMap, resetState, rewind } = loadDeviceVisual();
+  resetState();
+  const broken = { name: "x", category: "appliance", image: "appliance", room: "", allowAuto: false };
+  const first = exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1);
+  assert.equal(first.type, "Image");
+  first.props.onError();
+  rewind();
+  assert.equal(
+    exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1).type,
+    "Vector",
+  );
+  // A different, healthy bundled asset must still render as a photo: the same
+  // card instance (preserved failure state) re-renders with the new assignment.
+  rewind();
+  const healthy = { ...broken, category: "fan", image: "fan" };
+  const switched = exports.DeviceVisual({ assignment: healthy, id: "CH1" }).props.children.at(-1);
+  assert.equal(switched.type, "Image", "stale failure state must not poison another asset");
+  assert.equal(switched.props.source, imageMap.fan);
+  // If the healthy one fails too, it degrades the same way...
+  switched.props.onError();
+  rewind();
+  assert.equal(
+    exports.DeviceVisual({ assignment: healthy, id: "CH1" }).props.children.at(-1).type,
+    "Vector",
+  );
+  // ...and re-selecting the first broken asset retries it exactly once (the
+  // failure cache holds the last failed source, matching the custom-photo
+  // semantics), then degrades again — never a retry on every render.
+  rewind();
+  const retry = exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1);
+  assert.equal(retry.type, "Image", "re-selection retries a source once, not on every render");
+  retry.props.onError();
+  rewind();
+  assert.equal(
+    exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1).type,
+    "Vector",
+  );
+  // A third, still-healthy asset renders.
+  const third = { ...broken, category: "socket", image: "socket" };
+  const fresh = exports.DeviceVisual({ assignment: third, id: "CH1" }).props.children.at(-1);
+  assert.equal(fresh.type, "Image");
+  assert.equal(fresh.props.source, imageMap.socket);
+  resetState();
+});
+
+test("scene mode keeps the warm graphite backdrop when a bundled asset fails", () => {
+  const { exports, resetState, rewind } = loadDeviceVisual();
+  resetState();
+  const assignment = { name: "Чайник", category: "appliance", image: "appliance", room: "", allowAuto: false };
+  const sceneView = exports.DeviceVisual({ assignment, id: "CH1", scene: true });
+  const initial = sceneView.props.children.at(-1);
+  assert.equal(initial.type, "Image");
+  assert.equal(initial.props.accessibilityLabel, "Чайник");
+  initial.props.onError();
+  rewind();
+  const degraded = exports.DeviceVisual({ assignment, id: "CH1", scene: true });
+  assert.equal(degraded.props.children[0].type, "Gradient", "scene backdrop must stay painted");
+  const vector = degraded.props.children.at(-1);
+  assert.equal(vector.type, "Vector");
+  assert.equal(vector.props.config.categoryId, "kettle");
+  assert.equal(vector.props.accessibilityLabel, "Чайник");
+  resetState();
+});
+
 test("scene mode paints the warm graphite backdrop behind the visual", () => {
   const { exports, imageMap, resetState } = loadDeviceVisual();
   resetState();

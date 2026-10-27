@@ -11,12 +11,14 @@ export function defaultDeviceConfig(id?:ChannelId,image?:string){
  return defaultIllustration(category);
 }
 export function DeviceVisual({assignment,id,style,scene=false}:{assignment?:Assign|null;id?:ChannelId;style?:StyleProp<ViewStyle>;scene?:boolean}){
- const [failedUri,setFailedUri]=useState('');
+ const [failedSource,setFailedSource]=useState<string|number>('');
  const appearance=validateAppearance(assignment?.appearance);
- const photo=appearance?.kind==='photo'&&failedUri!==appearance.uri&&devicePhotoExists(appearance.uri)?appearance.uri:null;
- const bundled=!appearance&&assignment?.image&&Object.prototype.hasOwnProperty.call(imageMap,assignment.image)?imageMap[assignment.image as ImageId]:null;
+ const photoSource=appearance?.kind==='photo'?appearance.uri:null;
+ const bundledSource=!appearance&&assignment?.image&&Object.prototype.hasOwnProperty.call(imageMap,assignment.image)?imageMap[assignment.image as ImageId]:null;
+ const photo=photoSource&&failedSource!==photoSource&&devicePhotoExists(photoSource)?photoSource:null;
+ const bundled=bundledSource!==null&&failedSource!==bundledSource?bundledSource:null;
  return <View pointerEvents='none' style={[{overflow:'hidden',alignItems:'center',justifyContent:'center'},style]}>
   {scene&&<LinearGradient colors={['#30271E','#211E18','#191D18']} style={{position:'absolute',inset:0}}/>}
-  {photo||bundled?<Image source={photo?{uri:photo}:bundled!} style={{width:'100%',height:'100%'}} resizeMode='cover' accessibilityLabel={assignment?.name} onError={()=>{if(photo)setFailedUri(photo);}}/>:<DeviceIllustration config={appearance?.kind==='vector'?appearance.config:defaultDeviceConfig(id,assignment?.image)} width='100%' height='100%' accessibilityLabel={assignment?.name}/>}
+  {photo||bundled?<Image source={photo?{uri:photo}:bundled!} style={{width:'100%',height:'100%'}} resizeMode='cover' accessibilityLabel={assignment?.name} onError={()=>{setFailedSource(photo!==null?photo:bundledSource??'');}}/>:<DeviceIllustration config={appearance?.kind==='vector'?appearance.config:defaultDeviceConfig(id,assignment?.image)} width='100%' height='100%' accessibilityLabel={assignment?.name}/>}
  </View>;
 }

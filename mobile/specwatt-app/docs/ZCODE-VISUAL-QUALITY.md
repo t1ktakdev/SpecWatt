@@ -46,7 +46,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 | `npm run lint` (baseline) | exit 0 |
 | `node --test tests/zcode-device-visual-forms.test.mjs` (RED, before fix) | 3 pass / 2 fail with 32 identical-pair findings + ultrawide width 238=238 |
 | `node --test tests/zcode-device-visual-defaults.test.mjs` (RED, one-line revert of `appliance` mapping) | 5 pass / 1 fail (`expected 'kettle', got 'unknown'`) |
-| `npm test` (after fixes and review fixes) | **135 pass / 0 fail, exit 0** (114 pre-existing + 21 new across three files; no existing test modified) |
+| `npm test` (after fixes, review fixes and the night-watchdog round) | **138 pass / 0 fail, exit 0** (114 pre-existing + 24 new across three files; no pre-existing test modified) |
 | `npm run typecheck` (after fixes) | exit 0 |
 | `npm run lint` (after fixes) | exit 0 |
 | `python security/scan_secrets.py` (repo root) | `SECRET SCAN: clean (tracked worktree files)`, exit 0 |
@@ -108,6 +108,23 @@ All evidence in this run is **browser preview or static PNG inspection — none 
    This is safe with the current contract: `DeviceVisual` already renders the bundled photo when `appearance` is absent, `validateAppearance(undefined)` returns null, and `pruneDevicePhotos` (called on save) then reclaims the orphaned JPEG.
 2. **`src/app/setup.tsx` — photo import error message.** `choosePhoto()` catches every `PhotoError` code (busy/too-large/unsupported/…) into the single generic `errPhoto` string. The error codes exist in `photo-policy.ts`; mapping `e.code` to distinct dictionary keys would make "file too large" vs "permission denied" distinguishable. Proposed but not applied (dictionary files are outside this mission's file list).
 3. **`src/app/index.tsx`** — onboarding hero photo sizing (known visual-QA issue) needs its owner's review; the bundled asset is fine.
+
+## Night-watchdog round (2026-10-28, post PR #7): bundled image failure fallback
+
+An independent night review of PR #7 head `ae56b3a46cae5126a522b451d61eecbb406a0ff2` found a reproducible gap: the `onError` handler on the bundled-`Image` branch called `setFailedUri` only for custom photos, so a missing/corrupt/undecodable **bundled** asset kept re-mounting an empty `<Image>` on every render — the safe vector fallback (including the fixed `appliance`→`kettle` mapping) was never reached. The coordinator's reproducer (`C:\Users\user\Documents\ChatGPT\ZCode-Night-Watchdog\evidence\B\repro-bundled-error.mjs`, built on this file's own harness, native boundaries mocked exactly like the committed tests) failed on that head with `after='Image'`, exit 1, and passes after the fix with `after='Vector'`, exit 0.
+
+Exact renders (same harness, assignment `{image:'appliance'}`):
+
+| Step | Before fix (ae56b3a) | After fix |
+| --- | --- | --- |
+| initial render | `Image` (source = bundled appliance asset) | `Image` (source = bundled appliance asset) |
+| `onError()` → re-render | **`Image` again** (failure ignored; empty image loops forever) | **`Vector` (`categoryId='kettle'`)** |
+| 3 further renders | `Image` every time (re-requests the broken source) | `Vector` every time (no re-request) |
+| switch assignment to `image:'fan'` | `Image` (by accident — errors ignored) | `Image` (stale failure state does not poison the other asset) |
+
+Fix (`src/specwatt/device-visual.tsx`): the single state slot now tracks the **failed source identity** (custom-photo URI or bundled asset number) instead of only a failed photo URI; `onError` records whichever source was rendered. A failed source stops being mounted immediately (no per-render retry) while every other source — a different bundled asset, a new custom photo — still renders normally; re-selecting a previously failed source retries it exactly once, matching the pre-existing custom-photo semantics. Photo-first behavior for healthy bundled assets, the custom photo ownership/URI policy, scene backdrop, sizes and accessibility labels are unchanged; no new URI schemes; still a single `useState` slot (the documented harness assumption holds).
+
+Regression coverage added to `tests/zcode-device-visual-defaults.test.mjs` (3 tests): bundled decode failure degrades to the correct vector for **all seven `imageMap` ids** and is never re-mounted on subsequent renders; the source-switching sequence (appliance→fan→appliance→socket) with stale-failure isolation and one bounded retry; scene mode keeps the backdrop, vector and accessibility label after a bundled failure. The three new tests failed on the pre-fix head (`pass 8 / fail 3`) and pass after the fix; the pre-existing custom-photo `onError` and photo→vector tests are untouched and green.
 
 ## Code review (two independent read-only reviewers, main agent dispositions)
 
