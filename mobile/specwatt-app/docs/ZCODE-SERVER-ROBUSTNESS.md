@@ -45,7 +45,7 @@ After implementation: all green. One existing test (`api.test.mjs` "request time
 | --- | --- | --- |
 | `npm test` | `mobile/specwatt-app` | 148 tests, 148 pass, 0 fail, 0 skipped, exit 0 (baseline before changes: 114 pass) |
 | `node --experimental-strip-types --test tests/zcode-server-resilience.test.mjs` | `mobile/specwatt-app` | 26 pass, exit 0 |
-| `node --experimental-strip-types --test tests/zcode-server-e2e.test.mjs` | `mobile/specwatt-app` | 8 pass, 0 skipped, exit 0 (~4.6 s, spawns real loopback server) |
+| `node --experimental-strip-types --test tests/zcode-server-e2e.test.mjs` | `mobile/specwatt-app` | 9 pass, 0 skipped, exit 0 (~5 s, spawns real loopback server) |
 | `npm run typecheck` (`tsc --noEmit`) | `mobile/specwatt-app` | exit 0 |
 | `npm run lint` (`expo lint`) | `mobile/specwatt-app` | exit 0, no warnings |
 | `python -m unittest discover -s tests -q` | `backend` | 90 tests OK, exit 0 (READ-ONLY run, no backend changes) |
@@ -134,7 +134,21 @@ Two independent read-only reviewers were dispatched per mission 15 (tests/scenar
 
 - **Bind consent/step/sample to scope flights** (finding 11): rejected. Parent operations are serialized by the screen's run lock, so `activate`/`invalidate` cannot fire mid-mutation from the UI; the only external trigger is unmount, where React discards the state update anyway and aborting would only convert an already-unobservable request into an unobservable `request_cancelled`. `canCommit` tickets already suppress stale commits; adding dead abort plumbing was judged higher risk than value.
 
-### 11.3 Security/architecture reviewer
+### 11.3 Linux CI via the Draft PR (mission 19)
+
+The repository's only PR workflow is `.github/workflows/security.yml`. On the first run of Draft PR #6 (commit `77985ef`):
+
+- **Linux TypeScript/lint/runtime verification PASSED** in the `mobile-dependency-audit` job: `npm ci` → `npm test` (including the loopback e2e suite, which really ran on ubuntu-latest with its Python setup) → `npm run typecheck` → `npm run lint`, all exit 0. Windows results are therefore not the only evidence for the TypeScript gate.
+- Bandit (SAST), the security unittest suite (100 tests) and pip-audit PASSED.
+- **`Secret scan (worktree + history)` FAILED** with one masked `[generic-assignment]` finding in `tests/zcode-server-e2e.test.mjs`: the synthetic fixture credential `e2e-password-123` matches the scanner's `password\s*=\s*'…'` pattern and is not in its allowlist. The local pre-commit scan had reported clean because untracked new files are not scanned (`git ls-files` basis) — the finding materialized only once the file was committed. Root cause: agent error (committing a fixture value not pre-cleared with the scanner's allowlist), fully owned here.
+- **Fix applied in a follow-up commit (no history rewrite — force push is prohibited by the mission):** the e2e fixture now uses `correct-horse-battery`, the repo's established allowlisted fixture credential (`security/support.py`, allowlist entry "security suite fixture password"). Worktree scan: clean, exit 0; all 9 e2e tests re-verified green.
+- **Residual for the integrator (outside Mission D ownership, `security/**` is read-only for this agent):** the full-history pass (`fetch-depth: 0`, `git rev-list --all`) still reaches the superseded blob in intermediate commit `72b953b` of this branch. Two durable resolutions, either suffices:
+  1. add one allowlist entry to `security/scan_secrets.py`:
+     `("generic-assignment", "e2e-password-123", "superseded mobile e2e loopback fixture (removed in favor of correct-horse-battery)"),`
+  2. or squash-merge Draft PR #6 (and/or delete the branch afterwards) so the intermediate blob becomes unreachable from `--all`.
+- Process note for future waves: run `python security/scan_secrets.py` **after `git add`** (on staged/tracked content), not only on the working tree, before committing new test fixtures.
+
+### 11.4 Security/architecture reviewer
 
 Verdict first: **no critical or high findings**. The reviewer independently verified the S1 fix (compare-and-clear with the request's token; failed login can no longer wipe the vault), absence of token leakage (no `console.*`, error codes regex-bounded, `credentials:"omit"`, `redirect:"error"`, `cache:"no-store"`), soundness of the SecureStore promise queue (no unhandled rejections, no re-entrancy deadlock, FIFO makes 401 compare-and-clear atomic), the GET-retry mutation safety (exact-attempt tests for retry-once/cap/mutation/429/503/non-JSON-502), leak-free abort handling, correct `begin()/done()` semantics including double-done and StrictMode, intact CH3 protection (client pre-checks plus parser hard-rejection, server independently enforcing), and no false-success path. Accepted and fixed:
 
@@ -157,6 +171,7 @@ All commits authored as `ZCode Mobile Server Resilience Agent <zcode-mobile-serv
 - `020630c` feat(mobile): scope 401 invalidation to the rejected token and add safe-GET recovery — `src/specwatt/{api.ts,server-request-scope.ts,scheduler-api.ts}`, `tests/{zcode-server-resilience.test.mjs,api.test.mjs}`
 - `892c2d1` feat(mobile): cancel local server queries and pin stale-response commits in the server workspace — `src/screens/{server.tsx,server-schedules.tsx}`
 - `72b953b` test(mobile): end-to-end loopback FastAPI contract coverage for server resilience — `tests/zcode-server-e2e.test.mjs`
+- `576a50d` fix(mobile): use the allowlisted security-suite fixture credential in the loopback e2e — `tests/zcode-server-e2e.test.mjs` (CI secret-scan follow-up, see §11.3)
 - This handoff document itself (final commit on the branch; its SHA necessarily changes when this list is updated).
 
 HEAD after these commits: see `git rev-parse zcode/max-mobile-server`; every commit passed `git diff --cached --check` and the secret scan before being created.

@@ -16,7 +16,10 @@ import { blocksNewCommands } from '../src/specwatt/server-request-scope.ts';
 const testsDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(testsDir, '..', '..', '..');
 
-const PASSWORD = 'e2e-password-123';
+// Synthetic fixture credential, identical to the allowlisted security-suite
+// fixture (security/support.py); the throwaway loopback database is deleted
+// after the run and never leaves 127.0.0.1.
+const PASSWORD = 'correct-horse-battery';
 const EMAIL = `owner-${process.pid}-${Date.now()}@e2e.test`;
 const state = {};
 
