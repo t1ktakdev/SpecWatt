@@ -150,6 +150,10 @@ def _advance(db, controller, schedule, now) -> dict:
         return _go_uncertain(db, controller, schedule, now)
     if status == 'rejected':
         return _reject(db, controller, schedule, 'command_' + (command['reason'] or 'rejected'), now)
+    if status == 'cancelled':
+        # A cancelled command can never resolve into an outcome: the schedule
+        # must not wait on it forever. Terminal, audited, no re-issue.
+        return _reject(db, controller, schedule, 'command_cancelled', now)
     if status == 'reconciled':
         if command['reason'] != 'simulator_telemetry_matches_target':
             return _reject(db, controller, schedule, 'target_not_reached', now)
