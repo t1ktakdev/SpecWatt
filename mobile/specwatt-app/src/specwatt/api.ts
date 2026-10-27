@@ -322,26 +322,6 @@ export function createTokenVault(
   };
 }
 
-/**
- * A 401 may arrive long after its session was replaced: only the exact rejected token may be dropped.
- * Both vaults shipped here implement the atomic `clearMatching`; the
- * get-compare-clear fallback is a best-effort path for custom/test vaults
- * that do not (a concurrent `set` between the two awaits could in theory be
- * cleared — production never hits it).
- */
-async function invalidateToken(
-  vault: TokenVault,
-  baseUrl: string,
-  token: string | null,
-): Promise<void> {
-  if (!token) return;
-  if (vault.clearMatching) {
-    await vault.clearMatching(baseUrl, token);
-    return;
-  }
-  if ((await vault.get(baseUrl)) === token) await vault.clear(baseUrl);
-}
-
 const delay = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -370,6 +350,23 @@ export class BrainClient {
   }
   async hasSession() {
     return !!(await this.vault.get(this.baseUrl));
+  }
+  /**
+   * A 401 (or the logout of an obsolete session) may arrive long after its
+   * session was replaced: only the exact rejected token may be dropped.
+   * Both vaults shipped here implement the atomic `clearMatching`; the
+   * get-compare-clear fallback is a best-effort path for custom/test vaults
+   * that do not (a concurrent `set` between the two awaits could in theory be
+   * cleared — production never hits it).
+   */
+  private async invalidateToken(token: string | null): Promise<void> {
+    if (!token) return;
+    if (this.vault.clearMatching) {
+      await this.vault.clearMatching(this.baseUrl, token);
+      return;
+    }
+    if ((await this.vault.get(this.baseUrl)) === token)
+      await this.vault.clear(this.baseUrl);
   }
   private async request(
     path: string,
@@ -413,7 +410,7 @@ export class BrainClient {
         });
         if (response.status === 401) {
           try {
-            await invalidateToken(this.vault, this.baseUrl, token);
+            await this.invalidateToken(token);
           } catch {
             // The server definitively rejected the token; a local vault
             // failure must not turn this into a transient transport error.
@@ -513,7 +510,7 @@ export class BrainClient {
     } finally {
       if (token) {
         try {
-          await invalidateToken(this.vault, this.baseUrl, token);
+          await this.invalidateToken(token);
         } catch {
           // A local storage failure must not mask the server outcome; the
           // next authenticated request repairs the stale token via its 401.

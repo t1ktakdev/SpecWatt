@@ -189,6 +189,7 @@ An independent night review reported a reproducible defect in `BrainClient.logou
 - Watchdog-named trio `api.test.mjs + server-request-scope.test.mjs + zcode-server-resilience.test.mjs`: **50 pass / 0 fail**.
 - Full `npm test`: **155 pass / 0 fail / 0 skipped**; `npm run typecheck` exit 0; `npm run lint` exit 0.
 - Native `clear(baseUrl)` additionally mirrors the web vault: it deletes the shared record only when it belongs to that server (logout no longer routes through `clear()` at all).
+- **CI follow-up on the same push:** the static repo-hygiene test `security/test_repo_hygiene.py::test_401_clears_the_local_vault` asserts the literal `await this.vault.clear(this.baseUrl)` in `api.ts` — a string that previously existed only in the defective logout path removed by this fix. Resolved without touching `security/**`: the compare-and-clear fallback moved from a module function into a private `BrainClient.invalidateToken(token)` operating on `this.vault`, so the asserted line now genuinely represents the safe scoped clear (the 401 path still clears the local vault — exactly the test's intent). `python -m unittest discover -s security -q`: OK, exit 0 locally; full `npm test` 155/0 unchanged.
 
 ## 12. Commit list
 
