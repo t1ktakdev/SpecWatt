@@ -46,7 +46,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 | `npm run lint` (baseline) | exit 0 |
 | `node --test tests/zcode-device-visual-forms.test.mjs` (RED, before fix) | 3 pass / 2 fail with 32 identical-pair findings + ultrawide width 238=238 |
 | `node --test tests/zcode-device-visual-defaults.test.mjs` (RED, one-line revert of `appliance` mapping) | 5 pass / 1 fail (`expected 'kettle', got 'unknown'`) |
-| `npm test` (after fixes, review fixes and both night-watchdog rounds) | **150 pass / 0 fail, exit 0** (114 pre-existing + 36 new across four files; no pre-existing test modified) |
+| `npm test` (after fixes, review fixes and both night-watchdog rounds) | **151 pass / 0 fail, exit 0** (114 pre-existing + 37 new across four files; no pre-existing test modified) |
 | `npm run typecheck` (after fixes) | exit 0 |
 | `npm run lint` (after fixes) | exit 0 |
 | `python security/scan_secrets.py` (repo root) | `SECRET SCAN: clean (tracked worktree files)`, exit 0 |
@@ -154,7 +154,7 @@ Scenario / viewport / locale -> actual result:
 
 | Scenario | Result | Limit / note |
 | --- | --- | --- |
-| 440x952 RU, full catalogue (01) | 0 px horizontal overflow; 139 buttons; header/preview/controls/search/groups render | fresh-load FlatList mounts all 120 SVG on web before the first scroll (bottom scroll -> 40 mounted); native FlatList measures its real viewport from the first frame — web-only artifact, documented, not a code change |
+| 440x952 RU, full catalogue (01) | 0 px horizontal overflow; 139 buttons; header/preview/controls/search/groups render | fresh-load FlatList mounts all 120 SVG on web before the first scroll (bottom scroll -> 40 mounted); native first-frame behaviour is N/A — no native run happened in this session, so no claim is made about it; web-only artifact, documented, not a code change |
 | 320x800 RU (02) | 0 px overflow; Back 45x45 visible; footer CTA visible full-width (h=54) | preview/controls/tiles all legible; swatches fit one row |
 | long RU name at 320 (03, search verikalnaya -> 1 hit) | tile shows the 2-line ellipsis form (17 px suppressed) | full name stays in aria-label; standard list truncation, not a defect |
 | 800x360 landscape (04) | 0 px overflow; Back + CTA visible and inside the viewport | content scrolls under the fixed footer as designed |
@@ -164,7 +164,7 @@ Scenario / viewport / locale -> actual result:
 | larger text zoom 1.5 @320 | swatch fully off-screen (-32 px), 4th clipped (48 px) | fixed, see below |
 | 440x952 KY (08, real onboarding -> demo -> catalogue) | KY title/counter/swatch/CTA names; KY selected name wraps fully; 17 SVG mounted (windowed) | KY strings complete on this screen |
 | long KY name at 320 (09) | 2-line ellipsis; full name in aria-label | same truncation pattern as RU |
-| changed families spot-check, KY preview (10-11: ultrawide-monitor, floor-fan, extractor-fan, led-strip, wall-sconce, subwoofer, network-switch, desk-fan) | all distinct, proportional, Warm Graphite consistent with the approved references; nothing clips the preview | widest forms stay inside the 320x240 viewBox — also enforced by the signature/viewBox tests; NOT a pixel-parity claim |
+| changed families spot-check, KY preview (10-11: ultrawide-monitor, floor-fan, extractor-fan, led-strip, wall-sconce, subwoofer, network-switch, desk-fan) | all distinct, proportional, Warm Graphite consistent with the approved references; nothing clips the preview | widest forms were confirmed inside the preview and the 320x240 viewBox in these browser captures; the standing tests enforce the root viewBox attribute and pairwise-distinct trees, not per-art geometric bounds or pixel parity — in-bounds geometry was additionally checked by the architecture reviewer's one-off pass, and no pixel-parity claim is made |
 | SVG/bundled aspect | viewBox 0 0 320 240 enforced for all 119 by test; bundled photos are not part of the catalogue screen (their card rendering was verified against references in earlier rounds) | — |
 
 Fixes applied (owned files, minimal):
@@ -173,6 +173,16 @@ Fixes applied (owned files, minimal):
 2. **Selected state announced by name** (`src/screens/catalog.tsx`): react-native-web drops `accessibilityState.selected` for `role=button` (measured: no `aria-selected` on any control), leaving selection purely visual on web. Tiles, colour swatches, variant/details buttons and group chips now append the localized selected marker to the accessible name when selected (native TalkBack additionally keeps the native selected state — the word is additive, not a replacement).
 
 Regression suite `tests/zcode-device-visual-catalog.test.mjs` (5 tests, real CatalogScreen + real catalogue/search logic, navigation/store/primitives mocked): exactly-one selected tile and all four control groups announce the marker in RU and KY (with the kyrgyz word), unselected entries stay unmarked; the colour row carries `flexWrap:"wrap"`; search drives the real `searchDevices` (empty state + counter 0, fridge query -> counter 3 with all three matches); selection/use flow only dismisses back with the verbatim config (no capability effects). The marker/wrap assertions failed before the fixes and pass after.
+
+## Night-watchdog round 4 (catalog test harness useState semantics)
+
+The coordinator's review of head `d7007459144d505ce748ad21b4f00d62edacfab8` correctly identified a defect in THIS repo's catalog test harness (not in production code): `useState` computed the lazy initial value but never stored it in the hook slot, so the first functional updater received `undefined` and a config loaded from the route silently lost `color`/`variant`/`details`. Their reproducer (`evidence/B/repro-catalog-harness.mjs`, exit 1: `actual {categoryId:'fridge'}` missing three fields) confirmed it; the existing round-trip test passed because it asserted only `categoryId`.
+
+Fix (test file only, no production change): the harness now stores the initializer's result exactly once per hook slot (`index in states`, so falsy stored values such as the empty search string are never re-initialized), and functional updaters receive the actual stored value; `resetState` still re-initializes fresh and `rewind` still preserves slots across re-renders.
+
+New regression test `a functional selection keeps colour, variant and details through the use round-trip`: loads a non-default config through the route (`air-fryer/sage/angular/minimal`), performs a functional category selection immediately after load (the exact case that previously dropped fields), verifies idle re-renders do not mutate the stored config, applies two more sequential edits, then asserts the `use()` round-trip returns the exact deep config `{categoryId:'fridge', color:'copper', variant:'rounded', details:'minimal'}` with channel `CH1`. Red on the pre-fix harness (fields lost), green after; all six catalog tests and the full suite stay green.
+
+Note on the reproducer file itself: it embeds a snapshot of the pre-fix harness text (its line still contains the old `states[index] ?? ...` literal), so it cannot turn green against the fixed file — the same scenario is covered by the live round-trip test above. The history-only CI blocker (D-agent commits) and all earlier limitations remain with the integrator.
 
 ## Code review (two independent read-only reviewers, main agent dispositions)
 

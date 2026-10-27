@@ -29,10 +29,19 @@ function loadCatalog({ locale = "ru", params = {} } = {}) {
   const states = [];
   let cursor = 0;
   const react = {
+    // React semantics: the initializer (lazy or plain) runs exactly once per
+    // hook slot and its result is stored, so functional updaters always see
+    // the current value — including falsy ones (the `in` check, not ??).
     useState: (initial) => {
       const index = cursor++;
-      const value = states[index] ?? (typeof initial === "function" ? initial() : initial);
-      return [value, (next) => { states[index] = typeof next === "function" ? next(states[index]) : next; }];
+      if (!(index in states))
+        states[index] = typeof initial === "function" ? initial() : initial;
+      return [
+        states[index],
+        (next) => {
+          states[index] = typeof next === "function" ? next(states[index]) : next;
+        },
+      ];
     },
     useMemo: (factory) => factory(),
     createElement: (type, props, ...children) => ({
@@ -296,6 +305,46 @@ test("selection has no capability effects: using a channel only dismisses with t
   assert.ok(
     JSON.parse(h.nav.dismissedWith.params.illustration).categoryId === "fridge",
     "the chosen config is handed back verbatim",
+  );
+  h.resetState();
+});
+
+test("a functional selection keeps colour, variant and details through the use round-trip", () => {
+  const initial = { categoryId: "air-fryer", color: "sage", variant: "angular", details: "minimal" };
+  const h = loadCatalog({
+    locale: "ru",
+    params: { channel: "CH1", illustration: JSON.stringify(initial) },
+  });
+  h.resetState();
+  // The stored custom config is the selected tile on first render.
+  const tile = h.buttons(h.render()).find(
+    (p) => p.accessibilityLabel === "Аэрогриль, выбрано",
+  );
+  assert.ok(tile, "custom config must load as the selected tile");
+  // One functional update right after load: the stored slot (not a blank
+  // object) must be the updater's input, as React guarantees.
+  const fridge = h.buttons(h.render()).find((p) => p.accessibilityLabel === "Холодильник");
+  assert.ok(fridge, "target tile exists");
+  fridge.onPress();
+  // Re-renders alone must not mutate the stored config.
+  h.rewind();
+  h.render();
+  h.rewind();
+  // Then two more sequential edits on top.
+  const variant = h.buttons(h.render()).find((p) => p.accessibilityLabel === "Мягкий корпус");
+  assert.ok(variant, "variant control exists");
+  variant.onPress();
+  h.rewind();
+  const swatch = h.buttons(h.render()).find((p) => p.accessibilityLabel === "Медь");
+  assert.ok(swatch, "colour control exists");
+  swatch.onPress();
+  h.rewind();
+  h.cta(h.render()).onPress();
+  assert.equal(h.nav.dismissedWith?.params?.channel, "CH1");
+  assert.deepEqual(
+    JSON.parse(h.nav.dismissedWith.params.illustration),
+    { categoryId: "fridge", color: "copper", variant: "rounded", details: "minimal" },
+    "every config field must survive the whole round-trip",
   );
   h.resetState();
 });
