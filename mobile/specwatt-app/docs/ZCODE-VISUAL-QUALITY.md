@@ -136,4 +136,4 @@ Reviewer A (architecture/security) independently re-derived the 32-duplicate bas
 - Perf claims are web-labeled; native measurements N/A.
 - `npm audit` was not re-baselined in this run; the four known advisories documented by the wave-1 integrator remain (no dependency changes here).
 - `lamp.png` (cutout) is currently unreferenced by `imageMap` (only `lamp-scene` is used); it is not bundled by Metro (never `require`d) — kept for future chooser use, not removed.
-- Commit authorship: all commits are authored in this worktree as "ZCode Device Visuals Agent"; no history rewrites, no force push, PR opened as Draft against `integration/unified-v7-20261027` (not main). PR URL is recorded in the final commit message of this branch.
+- Commit authorship: all commits are authored in this worktree as "ZCode Device Visuals Agent"; no history rewrites, no force push, PR opened as Draft against `integration/unified-v7-20261027` (not main). **PR: https://github.com/t1ktakdev/SpecWatt/pull/7** (head `f476471cfb89bc561e4965c9a7626f8572fce6f6` at opening; the two follow-up commits below complete the record).
