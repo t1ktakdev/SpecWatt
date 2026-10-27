@@ -165,6 +165,31 @@ Rejected/documented with reasons:
 - **Abort during the inter-attempt retry delay is observed only at the next loop-top** — accepted as-is (≤ `retryDelayMs` = 400 ms extra latency, correctness unaffected); documented.
 - **Pre-existing observation (not a regression of this branch):** `redirect:"error"` depends on the fetch engine honoring redirect modes — React Native's OkHttp/NSURLSession-backed fetch may follow redirects and re-send the Authorization header. HTTPS-only (dev-local HTTP) bounds the exposure. Recorded in §10 as a follow-up proposal for the integrator. Also noted: `isSnapshotFresh` now rejects measurements from the future, so a badly skewed device clock shows fresh telemetry as stale (deliberate availability trade-off matching the server rule; the server clock is authoritative).
 
+## 11.5 Night-watchdog regression: stale-session logout (2026-10-28, HEAD bcc079d)
+
+An independent night review reported a reproducible defect in `BrainClient.logout()`: its `finally` unconditionally called `vault.clear(baseUrl)`, so a logout POST of an **obsolete** session that returned after a re-login deleted the **newer** session token. The 401 compare-and-clear fix (§2 S1) did not cover this path. Confirmed by inspection and by failing tests before any change.
+
+**Note on the supplied reproducer:** `C:\Users\user\ZCode-Night-Watchdog\evidence\D\repro-stale-logout.mjs` was **not present on disk** (the directory does not exist in this environment), so it could not be executed. The scenario was reconstructed faithfully from the report as a regression test using the **production `createTokenVault(false)`** exactly as described: set `synthetic-old-session`; the fetcher verifies the old bearer, stores `synthetic-new-session` into the same vault before answering 204; after `await client.logout()` the new token must survive.
+
+### Fix (src/specwatt/api.ts)
+
+- `logout()` captures the session token **once**, passes it to `request()` as an explicit token override, and locally removes exactly that token via the same `invalidateToken` compare-and-clear used for 401s. The bearer sent to the server and the token removed locally are the same identity by construction — `request()` cannot silently send a different token. Consequences per outcome:
+  - late **204** after rotation: server revoked the old session, the rotated token survives locally;
+  - late **401**: both the in-request invalidation and the logout cleanup compare-and-clear the old token; rotated token survives, `invalid_session` still surfaces;
+  - **network failure/timeout**: the ordinary safe local logout is preserved — the client's own token is cleared, the POST is attempted exactly once, never retried;
+  - **no token at start**: `session_required` before any fetch, nothing cleared;
+  - **repeated logout**: the second call finds no token, issues no request;
+  - **baseUrl change**: the compare-and-clear matches on `(baseUrl, token)`, so a record of another origin is never touched.
+- Native vault: the serialization queue moved from per-factory to **module scope** — two `createTokenVault(true)` instances share one `SESSION_KEY` record, and per-instance queues allowed a suspended read of one instance to interleave with another instance's write (lost update). Regression added with a `SecureStoreLike` injection seam (optional second factory argument; `expo-secure-store` itself is never imported in tests). Honest limitation: the race is reproduced at the production serialization layer with an injected storage double; the real native store cannot execute under `node --test`, so device-level proof remains outstanding and is **not** claimed.
+
+### Evidence
+
+- RED first: the three logout-rotation tests failed (rotated token wiped) and the native-race test could not even run (real `expo-secure-store` import attempted without the injection seam) — then all green after the fix.
+- `node --experimental-strip-types --test tests/zcode-server-resilience.test.mjs`: **32 pass / 0 fail** (was 26).
+- Watchdog-named trio `api.test.mjs + server-request-scope.test.mjs + zcode-server-resilience.test.mjs`: **50 pass / 0 fail**.
+- Full `npm test`: **155 pass / 0 fail / 0 skipped**; `npm run typecheck` exit 0; `npm run lint` exit 0.
+- Native `clear(baseUrl)` additionally mirrors the web vault: it deletes the shared record only when it belongs to that server (logout no longer routes through `clear()` at all).
+
 ## 12. Commit list
 
 All commits authored as `ZCode Mobile Server Resilience Agent <zcode-mobile-server@localhost>` (own identity; the shared repo config of other agents was never modified).

@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   ApiError,
   BrainClient,
+  createTokenVault,
   normalizeServerUrl,
   parseSnapshot,
 } from '../src/specwatt/api.ts';
@@ -121,6 +122,135 @@ test('a vault failure during 401 handling keeps the server error deterministic',
     () => client.controllers(),
     (error) => error.code === 'invalid_session',
   );
+});
+
+// --- Night-watchdog regression: logout must be scoped to its own session token.
+
+test('a logout of an obsolete session must not clear a newer token (production web vault)', async () => {
+  const vault = createTokenVault(false);
+  await vault.set(baseUrl, 'synthetic-old-session');
+  let sent = null;
+  const client = clientWith(async (_url, options) => {
+    sent = options.headers.Authorization;
+    // A re-login on the same screen stores the rotated session while the
+    // logout POST of the old session is still in flight.
+    await vault.set(baseUrl, 'synthetic-new-session');
+    return new Response(null, { status: 204 });
+  }, vault);
+  await client.logout();
+  assert.equal(sent, 'Bearer synthetic-old-session');
+  assert.equal(await vault.get(baseUrl), 'synthetic-new-session');
+});
+
+test('a late 401 on an obsolete logout leaves the rotated token alone', async () => {
+  const vault = createTokenVault(false);
+  await vault.set(baseUrl, 'synthetic-old-session');
+  const client = clientWith(async () => {
+    await vault.set(baseUrl, 'synthetic-new-session');
+    return unauthorized();
+  }, vault);
+  await assert.rejects(
+    () => client.logout(),
+    (error) => error.code === 'invalid_session',
+  );
+  assert.equal(await vault.get(baseUrl), 'synthetic-new-session');
+});
+
+test('obsolete logout keeps the newer token with a legacy vault (fallback compare)', async () => {
+  const vault = vaultWith('old-token');
+  const client = clientWith(async (_url, options) => {
+    assert.equal(options.headers.Authorization, 'Bearer old-token');
+    vault.token = 'new-token';
+    return new Response(null, { status: 204 });
+  }, vault);
+  await client.logout();
+  assert.equal(vault.token, 'new-token');
+});
+
+test('logout without a session never issues a POST and clears nothing', async () => {
+  const vault = createTokenVault(false);
+  // The web vault is process-wide; establish the empty precondition explicitly.
+  await vault.clear(baseUrl);
+  let calls = 0;
+  const client = clientWith(async () => {
+    calls += 1;
+    return new Response(null, { status: 204 });
+  }, vault);
+  await assert.rejects(
+    () => client.logout(),
+    (error) => error.code === 'session_required',
+  );
+  assert.equal(calls, 0);
+});
+
+test('a second logout after the first cannot send or clear anything', async () => {
+  const vault = createTokenVault(false);
+  await vault.set(baseUrl, 'only-session');
+  let calls = 0;
+  const client = clientWith(async () => {
+    calls += 1;
+    return new Response(null, { status: 204 });
+  }, vault);
+  await client.logout();
+  await assert.rejects(
+    () => client.logout(),
+    (error) => error.code === 'session_required',
+  );
+  assert.equal(calls, 1);
+  assert.equal(await vault.get(baseUrl), null);
+});
+
+test('an ordinary offline logout still clears its own session exactly once', async () => {
+  const vault = createTokenVault(false);
+  await vault.set(baseUrl, 'offline-session');
+  let calls = 0;
+  const client = clientWith(async () => {
+    calls += 1;
+    throw new TypeError('offline');
+  }, vault);
+  await assert.rejects(
+    () => client.logout(),
+    (error) => error.code === 'network_error',
+  );
+  assert.equal(calls, 1);
+  assert.equal(await vault.get(baseUrl), null);
+});
+
+// --- Native vault serialization must hold across instances (one shared SESSION_KEY).
+
+test('two native vault instances sharing one backing store serialize their writes', async () => {
+  const record = { value: null };
+  let releaseRead;
+  const gate = new Promise((resolve) => {
+    releaseRead = resolve;
+  });
+  const storage = {
+    // Real storage reads at call time; the promise resolves when the gate opens.
+    async getItemAsync() {
+      const snapshot = record.value;
+      await gate;
+      return snapshot;
+    },
+    async setItemAsync(_key, value) {
+      record.value = value;
+    },
+    async deleteItemAsync() {
+      record.value = null;
+    },
+  };
+  const first = createTokenVault(true, storage);
+  const second = createTokenVault(true, storage);
+  await first.set(baseUrl, 'session-a');
+  // A compare-and-clear of the old session starts, its read suspended on the gate…
+  const clearing = first.clearMatching(baseUrl, 'session-a');
+  // …while another instance rotates the stored session.
+  const rotating = second.set(baseUrl, 'session-b');
+  setTimeout(releaseRead, 10);
+  await Promise.all([clearing, rotating]);
+  // The rotation must be the last write: the suspended clear of session-a
+  // may not delete it after the fact.
+  assert.equal(JSON.parse(record.value).token, 'session-b');
+  assert.equal(await first.get(baseUrl), 'session-b');
 });
 
 // --- D4: bounded automatic recovery retry, safe GET only.

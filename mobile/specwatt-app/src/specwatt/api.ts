@@ -207,10 +207,51 @@ export interface TokenVault {
   /** Compare-and-clear: drop the stored session only when it still holds exactly this token. */
   clearMatching?(baseUrl: string, token: string): Promise<void>;
 }
+
+/** Minimal storage seam so the native vault path is testable without expo-secure-store. */
+export interface SecureStoreLike {
+  getItemAsync(key: string): Promise<string | null>;
+  setItemAsync(key: string, value: string): Promise<void>;
+  deleteItemAsync(key: string): Promise<void>;
+}
+
+// One queue for every vault instance in the process: instances share the same
+// SESSION_KEY record, so per-instance queues would let a read of one instance
+// interleave with the write of another and resurrect or lose a session.
+let nativeVaultQueue: Promise<unknown> = Promise.resolve();
+function serializeNativeVault<T>(job: () => Promise<T>): Promise<T> {
+  const run = nativeVaultQueue.then(job, job);
+  nativeVaultQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+let nativeStoragePromise: Promise<SecureStoreLike> | null = null;
+async function resolveNativeStorage(injected?: SecureStoreLike): Promise<SecureStoreLike> {
+  if (injected) return injected;
+  nativeStoragePromise ??= (async () => {
+    const secure = await import("expo-secure-store");
+    return {
+      getItemAsync: (key: string) => secure.getItemAsync(key),
+      setItemAsync: (key: string, value: string) =>
+        secure.setItemAsync(key, value, {
+          keychainAccessible: secure.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+        }),
+      deleteItemAsync: (key: string) => secure.deleteItemAsync(key),
+    };
+  })();
+  return nativeStoragePromise;
+}
+
 let browserSession: { baseUrl: string; token: string } | null = null;
 const SESSION_KEY = "specwatt.server.session.v1";
 /** Web intentionally has no persisted bearer token. Native uses the OS encrypted store. */
-export function createTokenVault(native: boolean): TokenVault {
+export function createTokenVault(
+  native: boolean,
+  injectedStorage?: SecureStoreLike,
+): TokenVault {
   if (!native) {
     return {
       async get(baseUrl) {
@@ -228,19 +269,10 @@ export function createTokenVault(native: boolean): TokenVault {
       },
     };
   }
-  let queue: Promise<unknown> = Promise.resolve();
-  const serialized = <T>(job: () => Promise<T>): Promise<T> => {
-    const run = queue.then(job, job);
-    queue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
-  };
   return {
     get(baseUrl) {
-      return serialized(async () => {
-        const secure = await import("expo-secure-store");
+      return serializeNativeVault(async () => {
+        const secure = await resolveNativeStorage(injectedStorage);
         const raw = await secure.getItemAsync(SESSION_KEY);
         if (!raw) return null;
         try {
@@ -253,18 +285,14 @@ export function createTokenVault(native: boolean): TokenVault {
       });
     },
     async set(baseUrl, token) {
-      await serialized(async () => {
-        const secure = await import("expo-secure-store");
-        await secure.setItemAsync(
-          SESSION_KEY,
-          JSON.stringify({ baseUrl, token }),
-          { keychainAccessible: secure.WHEN_UNLOCKED_THIS_DEVICE_ONLY },
-        );
+      await serializeNativeVault(async () => {
+        const secure = await resolveNativeStorage(injectedStorage);
+        await secure.setItemAsync(SESSION_KEY, JSON.stringify({ baseUrl, token }));
       });
     },
     async clear(baseUrl) {
-      await serialized(async () => {
-        const secure = await import("expo-secure-store");
+      await serializeNativeVault(async () => {
+        const secure = await resolveNativeStorage(injectedStorage);
         const raw = await secure.getItemAsync(SESSION_KEY);
         if (raw) {
           try {
@@ -278,8 +306,8 @@ export function createTokenVault(native: boolean): TokenVault {
       });
     },
     async clearMatching(baseUrl, token) {
-      await serialized(async () => {
-        const secure = await import("expo-secure-store");
+      await serializeNativeVault(async () => {
+        const secure = await resolveNativeStorage(injectedStorage);
         const raw = await secure.getItemAsync(SESSION_KEY);
         if (!raw) return;
         try {
@@ -349,12 +377,17 @@ export class BrainClient {
     body?: unknown,
     authorized = true,
     signal?: AbortSignal,
+    tokenOverride?: string | null,
   ): Promise<unknown> {
     // Exactly one recovery attempt for safe GETs; a mutation never repeats itself.
     const attempts = method === "GET" ? 2 : 1;
     let failure = new ApiError("network_error");
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      const token = authorized ? await this.vault.get(this.baseUrl) : null;
+      const token = authorized
+        ? tokenOverride !== undefined
+          ? tokenOverride
+          : await this.vault.get(this.baseUrl)
+        : null;
       if (authorized && !token) throw new ApiError("session_required");
       if (signal?.aborted) throw new ApiError("request_cancelled");
       const abort = new AbortController(),
@@ -464,10 +497,28 @@ export class BrainClient {
     await this.vault.set(this.baseUrl, string(result.access_token, 512));
   }
   async logout(): Promise<void> {
+    // Capture the session identity once: the bearer sent to the server must
+    // be the exact token removed locally, even if a concurrent login rotates
+    // the vault while this POST is in flight. A rotated-in token survives.
+    const token = await this.vault.get(this.baseUrl);
     try {
-      await this.request("/v1/auth/logout", "POST");
+      await this.request(
+        "/v1/auth/logout",
+        "POST",
+        undefined,
+        true,
+        undefined,
+        token,
+      );
     } finally {
-      await this.vault.clear(this.baseUrl);
+      if (token) {
+        try {
+          await invalidateToken(this.vault, this.baseUrl, token);
+        } catch {
+          // A local storage failure must not mask the server outcome; the
+          // next authenticated request repairs the stale token via its 401.
+        }
+      }
     }
   }
   async controllers(options?: RequestOptions): Promise<ServerController[]> {
