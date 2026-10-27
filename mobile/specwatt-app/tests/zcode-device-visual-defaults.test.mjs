@@ -7,8 +7,9 @@ import ts from "typescript";
 // Loads the REAL device-visual.tsx, appearance-policy.ts, photo-policy.ts and
 // illustrations/catalog.ts with only the truly native boundaries mocked
 // (expo filesystem + bundled asset registry), then drives the full appearance
-// fallback chain end to end.
-function loadDeviceVisual(deviceVisualPath = "../src/specwatt/device-visual.tsx") {
+// fallback chain end to end. The component owns a single useState slot; the
+// rewind/reset helpers below depend on that call order.
+function loadDeviceVisual() {
   const transpile = (path, jsx) =>
     ts.transpileModule(fs.readFileSync(new URL(path, import.meta.url), "utf8"), {
       compilerOptions: {
@@ -61,7 +62,7 @@ function loadDeviceVisual(deviceVisualPath = "../src/specwatt/device-visual.tsx"
     "file:///data/user/0/kg.specwatt.mobile/files/specwatt-photos/photo-t1ab12-a1b2c3d4e5f6.jpg";
   const imageMap = { lamp: 101, "led-strip": 102, fan: 103, charger: 104, socket: 105, appliance: 106 };
   const exports = {};
-  vm.runInNewContext(transpile(deviceVisualPath, true), {
+  vm.runInNewContext(transpile("../src/specwatt/device-visual.tsx", true), {
     exports,
     require: (name) => {
       if (name === "react") return react;
@@ -222,6 +223,44 @@ test("unmapped or hostile bundled image ids render the vector, never a broken im
   const empty = exports.DeviceVisual({ id: "CH2" }).props.children.at(-1);
   assert.equal(empty.type, "Vector");
   assert.equal(empty.props.config.categoryId, "led-strip");
+  resetState();
+});
+
+test("a valid persisted vector appearance renders exactly the chosen configuration", () => {
+  const { exports, resetState } = loadDeviceVisual();
+  const assignment = {
+    name: "Аэрогриль",
+    category: "lamp",
+    image: "lamp",
+    room: "",
+    allowAuto: false,
+    appearance: {
+      kind: "vector",
+      config: { categoryId: "air-fryer", color: "copper", variant: "angular", details: "minimal" },
+    },
+  };
+  resetState();
+  const element = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
+  assert.equal(element.type, "Vector");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(element.props.config)),
+    assignment.appearance.config,
+    "the persisted config must reach the illustrator untouched",
+  );
+  resetState();
+});
+
+test("every bundled image id renders through the bundled branch, never a broken image", () => {
+  const { exports, imageMap, resetState } = loadDeviceVisual();
+  for (const image of Object.keys(imageMap)) {
+    resetState();
+    const element = exports.DeviceVisual({
+      assignment: { name: "x", category: image, image, room: "", allowAuto: false },
+      id: "CH1",
+    }).props.children.at(-1);
+    assert.equal(element.type, "Image", image);
+    assert.equal(element.props.source, imageMap[image], image);
+  }
   resetState();
 });
 

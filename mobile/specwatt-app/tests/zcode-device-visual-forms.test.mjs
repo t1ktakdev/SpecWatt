@@ -30,6 +30,17 @@ function loadIllustrationRenderer() {
     }),
     Fragment: "Fragment",
     useId: () => ":t1:",
+    // The art must stay a pure render over the validated config: any new hook
+    // would need explicit reasoning here, so fail loudly instead of silently.
+    useMemo: () => {
+      throw new Error("DeviceIllustration gained a new hook; extend the test harness deliberately");
+    },
+    useRef: () => {
+      throw new Error("DeviceIllustration gained a new hook; extend the test harness deliberately");
+    },
+    useEffect: () => {
+      throw new Error("DeviceIllustration gained a new hook; extend the test harness deliberately");
+    },
     __esModule: true,
     default: null,
   };
@@ -81,6 +92,7 @@ function collectGeometry(node, out = []) {
       "d", "x", "y", "width", "height", "rx", "ry", "cx", "cy", "r",
       "x1", "x2", "y1", "y2", "strokeWidth", "transform",
       "fill", "stroke", "opacity", "strokeOpacity", "strokeLinecap",
+      "stopColor", "stopOpacity", "fontSize", "letterSpacing", "textAnchor",
     ];
     const parts = keys
       .filter((k) => node.props[k] !== undefined)
@@ -90,6 +102,8 @@ function collectGeometry(node, out = []) {
       });
     out.push(`${node.type}{${parts.join(";")}}`);
     collectGeometry(node.props.children, out);
+  } else if (typeof node === "string" || typeof node === "number") {
+    out.push(`text:${node}`);
   }
   return out;
 }
@@ -111,6 +125,24 @@ test("hostile configuration values never reach the rendered SVG tree", () => {
   const rendered = JSON.stringify(collectGeometry(svg));
   for (const marker of ["http", "file:", "script", "url(https"])
     assert.ok(!rendered.includes(marker), `rendered art leaked ${marker}`);
+  // Hostile configs must be rejected by validation and render the exact same
+  // tree as the safe "unknown" default, not a derived or degraded variant.
+  const baseline = JSON.stringify(collectGeometry(svg));
+  const hostile = [
+    { categoryId: "x".repeat(51), color: "cream", variant: "rounded", details: "detailed" },
+    { categoryId: "unknown", color: "url(https://evil.test/a)", variant: "rounded", details: "detailed" },
+    { categoryId: "unknown", color: "cream", variant: "rounded", details: "detailed", href: "https://evil.test/a" },
+    { categoryId: "unknown", color: "cream", variant: "rounded", details: "detailed", onLoad: "alert(1)" },
+    { categoryId: "../../etc/passwd", color: "cream", variant: "rounded", details: "detailed" },
+    { categoryId: "unknown", color: "cream", variant: { script: "x" }, details: "detailed" },
+    null,
+  ];
+  for (const config of hostile)
+    assert.equal(
+      JSON.stringify(collectGeometry(render(config))),
+      baseline,
+      "hostile config must render exactly the unknown fallback",
+    );
 });
 
 test("gradient stops keep Android-safe numeric offsets in non-decreasing order", () => {
