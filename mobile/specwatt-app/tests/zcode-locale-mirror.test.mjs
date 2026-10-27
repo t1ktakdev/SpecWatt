@@ -1,94 +1,60 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import vm from 'node:vm';
-import ts from 'typescript';
+import {
+  MIRROR_KEY, parseLocale, localeFromStoredState,
+  recallLocale, rememberLocale, applyLocale,
+} from '../src/specwatt/localization/locale-mirror.ts';
 import { defaultDraft } from '../src/specwatt/localization/default-draft.ts';
-
-const MIRROR_KEY = 'specwatt-locale-mirror-v1';
-
-// Loads locale-mirror.ts with a controllable AsyncStorage fake. The module
-// must keep working when storage itself is broken: the mirror is a recovery
-// path for corrupted/legacy state and must never raise user-facing errors.
-function mirrorHarness(storage) {
-  const source = fs.readFileSync(
-    new URL('../src/specwatt/localization/locale-mirror.ts', import.meta.url),
-    'utf8',
-  );
-  const code = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: true },
-  }).outputText;
-  const exports = {};
-  vm.runInNewContext(code, {
-    exports,
-    require: (name) => {
-      if (name === '@react-native-async-storage/async-storage') return storage;
-      throw new Error(`unexpected require: ${name}`);
-    },
-  });
-  return exports;
-}
 
 function fakeStorage(table, { failRead = false, failWrite = false } = {}) {
   return {
     getItem: async (key) => {
-      if (failRead) throw new Error('storage read failed');
+      if (failRead) throw new Error('read-error');
       return key in table ? table[key] : null;
     },
     setItem: async (key, value) => {
-      if (failWrite) throw new Error('storage write failed');
+      if (failWrite) throw new Error('write-error');
       table[key] = value;
     },
   };
 }
 
-test('mirror remembers the chosen locale and recalls it', async () => {
-  const table = {};
-  const mirror = mirrorHarness(fakeStorage(table));
-  mirror.rememberLocale('ky');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(table[MIRROR_KEY], 'ky');
-  assert.equal(await mirror.recallLocale(), 'ky');
-});
-
-test('corrupted or legacy mirror values are rejected, never guessed', async () => {
+test('mirror only accepts strict ru/ky, not JSON or unsafe input', async () => {
   for (const raw of ['RU', '"ky"', '', 'english', 'ru ky', 'null', 'undefined']) {
-    const mirror = mirrorHarness(fakeStorage({ [MIRROR_KEY]: raw }));
-    assert.equal(await mirror.recallLocale(), null, `value ${raw} must be ignored`);
+    assert.equal(await recallLocale(fakeStorage({ [MIRROR_KEY]: raw })), null);
   }
+  assert.equal(parseLocale('ky'), 'ky');
+  assert.equal(parseLocale('ru'), 'ru');
+  assert.equal(parseLocale({ toString() { throw Error('coerce'); } }), null);
 });
 
-test('a failing read reports no locale instead of throwing', async () => {
-  const mirror = mirrorHarness(fakeStorage({}, { failRead: true }));
-  assert.equal(await mirror.recallLocale(), null);
-});
-
-test('a failing write is swallowed: mirror must not create user-visible errors', async () => {
-  let attempted = false;
-  const storage = {
-    getItem: async () => null,
-    setItem: async () => {
-      attempted = true;
-      throw new Error('storage write failed');
-    },
-  };
-  const mirror = mirrorHarness(storage);
-  assert.doesNotThrow(() => mirror.rememberLocale('ru'));
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(attempted, true, 'mirror write must still be attempted');
-});
-
-test('the real applyLocale policy updates the store and the mirror together', async () => {
+test('reading and writing mirror with injected storage works', async () => {
   const table = {};
-  const mirror = mirrorHarness(fakeStorage(table));
-  const updates = [];
-  mirror.applyLocale((locale) => updates.push(locale), 'ky');
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(updates, ['ky'], 'store setter must receive the locale');
-  assert.equal(table[MIRROR_KEY], 'ky', 'mirror must record the same choice');
+  const storage = fakeStorage(table);
+  await rememberLocale(storage, 'ky');
+  assert.equal(table[MIRROR_KEY], 'ky');
+  assert.equal(await recallLocale(storage), 'ky');
 });
 
-test('default device draft starts from the locale-appropriate room name', () => {
+test('failed mirror read/write remain nonfatal', async () => {
+  assert.equal(await recallLocale(fakeStorage({}, { failRead: true })), null);
+  await assert.doesNotReject(rememberLocale(fakeStorage({}, { failWrite: true }), 'ky'));
+});
+
+test('locale from corrupt state is independent from dangerous channel contents', () => {
+  assert.equal(localeFromStoredState({ locale: 'ky', source: 'demo', channels: [{ protected: false }] }), 'ky');
+  assert.equal(localeFromStoredState({ locale: 'de', source: 'demo' }), null);
+  assert.equal(localeFromStoredState(null), null);
+  assert.equal(localeFromStoredState([]), null);
+});
+
+test('screen calls the store setter, it never writes to another AsyncStorage directly', () => {
+  const updates = [];
+  applyLocale((v) => updates.push(v), 'ky');
+  assert.deepEqual(updates, ['ky']);
+});
+
+test('locale-appropriate device default does not enable automatic control', () => {
   const ru = defaultDraft('ru');
   const ky = defaultDraft('ky');
   assert.equal(ru.room, 'Гостиная');

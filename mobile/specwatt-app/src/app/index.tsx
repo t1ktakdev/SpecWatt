@@ -15,7 +15,7 @@ import { theme, sty } from "../specwatt/theme";
 import { imageMap } from "../specwatt/images";
 import { t } from "../specwatt/i18n";
 import { useSpec } from "../specwatt/store";
-import { applyLocale, recallLocale } from "../specwatt/localization/locale-mirror";
+import { applyLocale } from "../specwatt/localization/locale-mirror";
 
 type Page = "welcome" | "locale" | "mode" | "login" | "register" | "recovery";
 export default function Onboarding() {
@@ -23,7 +23,7 @@ export default function Onboarding() {
   const insets = useSafeAreaInsets();
   const availableHeight = height - insets.top - insets.bottom;
   const welcomeImageHeight = Math.max(130, Math.min(220, availableHeight * 0.24));
-  const { data, ready, storageError, setLocale, enterDemo, setOnboarded } = useSpec();
+  const { data, ready, setLocale, enterDemo, setOnboarded } = useSpec();
   const [page, setPage] = useState<Page>("welcome");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,16 +35,7 @@ export default function Onboarding() {
     if (!ready || resumed.current) return;
     resumed.current = true;
     if (data.source === "demo" || data.onboarded) router.replace("/home");
-    else if (storageError)
-      // The store could not read its state, so the chosen language may be
-      // lost; the mirror is the recovery source for exactly this case.
-      // Invariant: this only runs while the user is on onboarding, which
-      // holds because a failed read leaves emptyState (source "none",
-      // onboarded false). If emptyState defaults ever change, revisit this.
-      recallLocale().then((mirrored) => {
-        if (mirrored && mirrored !== locale) setLocale(mirrored);
-      });
-  }, [ready, data.source, data.onboarded, locale, setLocale, storageError]);
+  }, [ready, data.source, data.onboarded]);
   function chooseDemo() {
     enterDemo();
     router.replace("/home");

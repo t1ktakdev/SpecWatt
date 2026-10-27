@@ -101,11 +101,8 @@ function indexHarness(store) {
     '../specwatt/store': { useSpec: () => store },
     '../specwatt/i18n': i18n,
     '../specwatt/localization/locale-mirror': {
-      // The real module imports AsyncStorage (native); the harness mirrors
-      // its exact policy: store update + fire-and-forget mirror write.
-      recallLocale: async () => store.__mirrorLocale ?? null,
-      rememberLocale: (locale) => mirrorCalls.remember.push(locale),
-      applyLocale: (setLocale, locale) => { setLocale(locale); mirrorCalls.remember.push(locale); },
+      // Screen delegates selection only. AsyncStorage belongs to SpecProvider.
+      applyLocale: (setLocale, locale) => setLocale(locale),
     },
   };
   const exports = {};
@@ -141,7 +138,7 @@ test('KY onboarding welcome page shows Kyrgyz feature badges, never Russian ones
   assert.ok(!text.includes('Всё работает'), 'hardcoded Russian title leaked into KY onboarding');
 });
 
-test('language cards expose role, label, selected state and mirror the choice', () => {
+test('language cards expose role, label, selected state and delegate locale to the store', () => {
   const setLocale = [];
   const store = storeBase({ setLocale: (x) => setLocale.push(x) });
   const { render, mirrorCalls } = indexHarness(store);
@@ -160,7 +157,7 @@ test('language cards expose role, label, selected state and mirror the choice', 
   assert.ok(kyCard.props.accessibilityHint, 'cards must carry a screen reader hint');
   ruCard.props.onPress();
   assert.deepEqual(setLocale, ['ru']);
-  assert.deepEqual(mirrorCalls.remember, ['ru'], 'locale choice must be mirrored for recovery');
+  assert.deepEqual(mirrorCalls.remember, [], 'the screen does not access independent storage');
 });
 
 test('login form inputs carry accessibility labels and errors are announced', () => {
@@ -182,31 +179,23 @@ test('login form inputs carry accessibility labels and errors are announced', ()
   assert.ok(treeText(live).includes(i18n.t('ky', 'errEmail')));
 });
 
-test('failed storage read restores the mirrored locale instead of resetting to Russian', async () => {
-  const setLocale = [];
+test('onboarding receives recovered Kyrgyz locale from SpecProvider, no UI storage read', () => {
   const store = storeBase({
-    storageError: 'read-error',
-    data: { locale: 'ru', source: 'none', onboarded: false },
-    setLocale: (x) => setLocale.push(x),
-    __mirrorLocale: 'ky',
+    storageError: 'invalid-storage',
+    data: { locale: 'ky', source: 'none', onboarded: false },
+    setLocale: () => { throw Error('no UI mutation needed'); },
   });
   const { render } = indexHarness(store);
-  render();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(setLocale, ['ky'], 'mirror must restore KY after corrupted storage');
+  assert.ok(treeText(render()).includes(i18n.t('ky', 'welcomeTitle1')));
 });
 
-test('healthy storage never overrides the stored locale with the mirror', async () => {
-  const setLocale = [];
+test('onboarding leaves healthy Russian locale untouched', () => {
   const store = storeBase({
     data: { locale: 'ru', source: 'none', onboarded: false },
-    setLocale: (x) => setLocale.push(x),
-    __mirrorLocale: 'ky',
+    setLocale: () => { throw Error('healthy store locale should persist'); },
   });
   const { render } = indexHarness(store);
-  render();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(setLocale, [], 'mirror must not fight healthy stored state');
+  assert.ok(treeText(render()).includes(i18n.t('ru', 'welcomeTitle1')));
 });
 
 function setupHarness(store) {
@@ -363,9 +352,7 @@ function settingsHarness(store) {
     '../specwatt/store': { useSpec: () => store },
     '../specwatt/i18n': i18n,
     '../specwatt/localization/locale-mirror': {
-      recallLocale: async () => null,
-      rememberLocale: (locale) => mirrorCalls.remember.push(locale),
-      applyLocale: (setLocale, locale) => { setLocale(locale); mirrorCalls.remember.push(locale); },
+      applyLocale: (setLocale, locale) => setLocale(locale),
     },
     '../specwatt/mobile-ui': {
       // Settings must use the centralized dictionary; useWords here is drift.
