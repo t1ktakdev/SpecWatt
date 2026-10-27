@@ -121,7 +121,9 @@ export function DeviceIllustration({
     case "lamp": {
       const floor = f === 2,
         reading = f === 4,
-        night = f === 5;
+        night = f === 5,
+        desk = f === 0,
+        bedside = f === 3;
       art = reading ? (
         <G>
           <Path
@@ -134,6 +136,98 @@ export function DeviceIllustration({
           <Path d="M103 49l39-10 23 27-64 16Z" fill={body} stroke="#BBA987" />
           <Ellipse cx={130} cy={73} rx={30} ry={8} fill={warm} />
           <Ellipse cx={148} cy={201} rx={48} ry={8} fill={metal} />
+        </G>
+      ) : desk ? (
+        <G>
+          <Ellipse
+            cx={172}
+            cy={207}
+            rx={72}
+            ry={10}
+            fill="#FFB65D"
+            opacity={0.09}
+          />
+          <Ellipse cx={152} cy={198} rx={44} ry={8} fill={metal} />
+          <Rect
+            x={110}
+            y={188}
+            width={84}
+            height={12}
+            rx={6}
+            fill={body}
+            stroke="#E0C190"
+            strokeWidth={0.7}
+          />
+          <Path
+            d="M148 190L126 98"
+            stroke={metal}
+            strokeWidth={8}
+            fill="none"
+          />
+          <Circle cx={126} cy={98} r={9} fill={body} stroke="#BBA987" strokeWidth={0.8} />
+          <Path d="M126 98L182 54" stroke={metal} strokeWidth={7} fill="none" />
+          <Path
+            d="M162 44L204 58L246 110L202 124Z"
+            fill={body}
+            stroke="#F1D5A7"
+            strokeWidth={1.2}
+          />
+          <Path
+            d="M170 50l38 12m-46 2l38 12"
+            stroke="#FFF2D4"
+            strokeWidth={1.4}
+            opacity={0.4}
+          />
+          <Ellipse
+            cx={224}
+            cy={117}
+            rx={27}
+            ry={6}
+            fill={warm}
+            transform="rotate(24 224 117)"
+          />
+          <Path d="M210 126l30 66-64-8Z" fill="#FFB65D" opacity={0.08} />
+        </G>
+      ) : bedside ? (
+        <G>
+          <Ellipse
+            cx={160}
+            cy={207}
+            rx={62}
+            ry={9}
+            fill="#FFB65D"
+            opacity={0.09}
+          />
+          <Rect
+            x={130}
+            y={184}
+            width={60}
+            height={18}
+            rx={7}
+            fill={metal}
+          />
+          <Path d="M150 132h20l6 54h-32Z" fill={body} stroke="#E0C190" strokeWidth={0.7} />
+          <Path
+            d="M116 130C116 74 204 74 204 130Z"
+            fill={body}
+            stroke="#F1D5A7"
+            strokeWidth={1.2}
+          />
+          <Path
+            d="M118 128C136 123 184 123 202 128"
+            stroke="#FFCE83"
+            strokeWidth={3.4}
+            fill="none"
+          />
+          <Ellipse cx={160} cy={130} rx={43} ry={6.5} fill={warm} />
+          <Path d="M154 140h12l3 46h-18Z" fill="#F8D8A2" opacity={0.42} />
+          <Path
+            d="M136 108C142 84 152 76 160 74"
+            stroke="#FFF2D4"
+            strokeWidth={2}
+            opacity={0.4}
+            fill="none"
+          />
         </G>
       ) : (
         <G>
@@ -225,6 +319,58 @@ export function DeviceIllustration({
                 fill={warm}
               />
             ))}
+          </G>
+        ) : f === 0 ? (
+          <G>
+            <Ellipse
+              cx={160}
+              cy={198}
+              rx={136}
+              ry={13}
+              fill="#D89B4A"
+              opacity={0.12}
+            />
+            <Path
+              d="M26 182H116L138 150H228L250 118H294"
+              stroke={metal}
+              strokeWidth={17}
+              fill="none"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <Path
+              d="M26 176H116L138 144H228L250 112H294"
+              stroke="#E8C58D"
+              strokeWidth={1}
+              fill="none"
+              opacity={0.8}
+            />
+            {[34, 50, 66, 82, 98, 112].map((x) => (
+              <G key={`a${x}`}>
+                <Rect x={x} y={177} width={9} height={11} rx={1.5} fill="#675B3D" />
+                <Rect x={x + 1} y={179} width={7} height={7.5} rx={1} fill={warm} />
+              </G>
+            ))}
+            {[146, 162, 178, 194, 210, 224].map((x) => (
+              <G key={`b${x}`}>
+                <Rect x={x} y={145} width={9} height={11} rx={1.5} fill="#675B3D" />
+                <Rect x={x + 1} y={147} width={7} height={7.5} rx={1} fill={warm} />
+              </G>
+            ))}
+            {[258, 274, 288].map((x) => (
+              <G key={`c${x}`}>
+                <Rect x={x} y={113} width={9} height={11} rx={1.5} fill="#675B3D" />
+                <Rect x={x + 1} y={115} width={7} height={7.5} rx={1} fill={warm} />
+              </G>
+            ))}
+            <Path
+              d="M286 124C300 138 296 166 272 178"
+              stroke="#A9854D"
+              strokeWidth={12}
+              fill="none"
+            />
+            <Rect x={252} y={172} width={26} height={12} rx={4} fill={edge} />
+            <Circle cx={258} cy={178} r={2.4} fill="#FFA86B" />
           </G>
         ) : (
           <G>
@@ -348,10 +494,14 @@ export function DeviceIllustration({
       break;
     }
     case "fan": {
-      const hardware = f === 0 || f === 3;
+      const hardware = f === 0 || f === 3,
+        extractor = f === 3,
+        floorFan = f === 2;
+      const headY = floorFan ? 84 : 122,
+        headR = floorFan ? 54 : 66;
       art = (
         <G>
-          {hardware && (
+          {hardware && f === 0 && (
             <>
               <Path
                 d="M85 166C57 181 62 204 34 211"
@@ -367,14 +517,46 @@ export function DeviceIllustration({
               />
             </>
           )}
+          {hardware && extractor && (
+            <>
+              <Rect x={54} y={14} width={212} height={208} rx={12} fill="#20261F" />
+              {Array.from({ length: 7 }, (_, i) => (
+                <Line
+                  key={i}
+                  x1={78}
+                  x2={242}
+                  y1={44 + i * 25}
+                  y2={44 + i * 25}
+                  stroke="#39423A"
+                  strokeWidth={5}
+                />
+              ))}
+            </>
+          )}
           {!hardware && (
             <>
-              <Path d="M152 134h16l9 65h-34Z" fill={metal} />
-              <Ellipse cx={160} cy={203} rx={48} ry={8} fill={body} />
+              <Path
+                d={
+                  floorFan
+                    ? "M151 128h18l9 74h-36Z"
+                    : "M152 152h16l9 44h-34Z"
+                }
+                fill={metal}
+              />
+              <Ellipse
+                cx={160}
+                cy={floorFan ? 208 : 201}
+                rx={floorFan ? 42 : 52}
+                ry={floorFan ? 7 : 9}
+                fill={body}
+              />
+              {floorFan && (
+                <Rect x={112} y={202} width={96} height={7} rx={3} fill={metal} />
+              )}
             </>
           )}
           <G transform={hardware ? "rotate(-7 160 121)" : ""}>
-            {hardware && (
+            {hardware && f === 0 && (
               <>
                 <Rect
                   x={76}
@@ -398,10 +580,13 @@ export function DeviceIllustration({
                 />
               </>
             )}
+            {hardware && extractor && (
+              <Circle cx={160} cy={119} r={88} fill="none" stroke="#39423A" strokeWidth={5} />
+            )}
             <Circle
               cx={160}
-              cy={119}
-              r={hardware ? 74 : 68}
+              cy={headY}
+              r={hardware ? 74 : headR}
               fill="#171D18"
               stroke={metal}
               strokeWidth={hardware ? 7 : 5}
@@ -413,21 +598,37 @@ export function DeviceIllustration({
                 fill={i % 2 ? body : metal}
                 stroke="#4E5749"
                 strokeWidth={0.7}
-                transform={`rotate(${(i * 360) / 7} 160 119)`}
+                transform={`translate(0 ${headY - 119}) rotate(${(i * 360) / 7} 160 119)`}
               />
             ))}
             <Circle
               cx={160}
-              cy={119}
-              r={24}
+              cy={headY}
+              r={hardware ? 24 : floorFan ? 20 : 24}
               fill={edge}
               stroke="#7F806A"
               strokeWidth={1.5}
             />
-            <Circle cx={160} cy={119} r={18} fill={body} />
-            <Circle cx={154} cy={113} r={9} fill="#ACB6A1" opacity={0.11} />
-            {hardware
-              ? [
+            <Circle cx={160} cy={headY} r={18} fill={body} />
+            <Circle
+              cx={154}
+              cy={headY - 6}
+              r={9}
+              fill="#ACB6A1"
+              opacity={0.11}
+            />
+            {hardware ? (
+              extractor ? (
+                <Circle
+                  cx={160}
+                  cy={119}
+                  r={30}
+                  fill="none"
+                  stroke="#525E50"
+                  strokeWidth={2}
+                />
+              ) : (
+                [
                   [88, 46],
                   [232, 46],
                   [88, 190],
@@ -449,100 +650,171 @@ export function DeviceIllustration({
                     />
                   </G>
                 ))
-              : detail && (
-                  <G>
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <Ellipse
-                        key={i}
-                        cx={160}
-                        cy={119}
-                        rx={12 + i * 7}
-                        ry={12 + i * 7}
-                        stroke="#A5AB97"
-                        strokeWidth={0.5}
-                        opacity={0.55}
-                        fill="none"
-                      />
-                    ))}
-                  </G>
-                )}
+              )
+            ) : (
+              detail && (
+                <G>
+                  {Array.from({ length: 8 }, (_, i) => (
+                    <Ellipse
+                      key={i}
+                      cx={160}
+                      cy={headY}
+                      rx={12 + i * 7}
+                      ry={12 + i * 7}
+                      stroke="#A5AB97"
+                      strokeWidth={0.5}
+                      opacity={0.55}
+                      fill="none"
+                    />
+                  ))}
+                </G>
+              )
+            )}
           </G>
         </G>
       );
       break;
     }
     case "bulb":
-      art = (
-        <G>
-          <Path
-            d={
-              f === 2
-                ? "M160 28C134 66 112 84 121 112C125 126 140 133 144 157h32c4-24 19-31 23-45C208 84 185 66 160 28Z"
-                : "M144 157C143 138 111 119 111 87a49 49 0 0 1 98 0c0 32-32 51-33 70Z"
-            }
-            fill={body}
-            stroke="#DAC293"
-          />
-          <Ellipse cx={160} cy={111} rx={36} ry={36} fill={glow} />
-          <Path
-            d="M145 153l-8-53 15 9 16-16 15 7-10 53"
-            stroke="#FFBD70"
-            fill="none"
-            strokeWidth={2}
-          />
-          <Path d="M143 157h34v30l-12 12h-10l-12-12Z" fill={metal} />
-          {[164, 171, 178, 185].map((y) => (
-            <Line
-              key={y}
-              x1={143}
-              x2={177}
-              y1={y}
-              y2={y - 3}
-              stroke="#31392F"
-              strokeWidth={3}
+      art =
+        f === 1 ? (
+          <G>
+            <Path
+              d="M144 157C143 138 108 121 108 86a52 52 0 0 1 104 0c0 35-35 52-36 71Z"
+              fill={body}
+              stroke="#DAC293"
             />
-          ))}
-        </G>
-      );
+            <Ellipse cx={160} cy={109} rx={38} ry={38} fill={glow} />
+            <Path
+              d="M147 148c-3-28-6-48 1-58m9 56c-2-26-3-42 1-54m9 52c0-24 3-40 0-50"
+              stroke="#FFBD70"
+              strokeWidth={1.5}
+              fill="none"
+              opacity={0.8}
+            />
+            <Path
+              d="M136 132q8 10 16 0t16 0q8 10 16 0"
+              stroke="#FFBD70"
+              strokeWidth={2.2}
+              fill="none"
+            />
+            <Path d="M143 157h34v30l-12 12h-10l-12-12Z" fill={metal} />
+            {[164, 171, 178, 185].map((y) => (
+              <Line
+                key={y}
+                x1={143}
+                x2={177}
+                y1={y}
+                y2={y - 3}
+                stroke="#31392F"
+                strokeWidth={3}
+              />
+            ))}
+          </G>
+        ) : (
+          <G>
+            <Path
+              d={
+                f === 2
+                  ? "M160 28C134 66 112 84 121 112C125 126 140 133 144 157h32c4-24 19-31 23-45C208 84 185 66 160 28Z"
+                  : "M144 157C143 138 111 119 111 87a49 49 0 0 1 98 0c0 32-32 51-33 70Z"
+              }
+              fill={body}
+              stroke="#DAC293"
+            />
+            <Ellipse cx={160} cy={111} rx={36} ry={36} fill={glow} />
+            <Path
+              d="M145 153l-8-53 15 9 16-16 15 7-10 53"
+              stroke="#FFBD70"
+              fill="none"
+              strokeWidth={2}
+            />
+            <Path d="M143 157h34v30l-12 12h-10l-12-12Z" fill={metal} />
+            {[164, 171, 178, 185].map((y) => (
+              <Line
+                key={y}
+                x1={143}
+                x2={177}
+                y1={y}
+                y2={y - 3}
+                stroke="#31392F"
+                strokeWidth={3}
+              />
+            ))}
+          </G>
+        );
       break;
     case "pendant":
       art = (
         <G>
-          <Path d="M160 10v58" stroke={metal} strokeWidth={4} />
-          {f === 1 ? (
+          {f === 2 ? (
             <G>
-              {[-1, 0, 1].map((i) => (
-                <G key={i}>
-                  <Path
-                    d={`M160 63Q${160 + i * 66} 90 ${160 + i * 66} 106`}
-                    fill="none"
-                    stroke={metal}
-                    strokeWidth={4}
-                  />
-                  <Path
-                    d={`M${130 + i * 66} 141q0-54 30-54t30 54Z`}
-                    fill={body}
-                  />
-                  <Ellipse
-                    cx={160 + i * 66}
-                    cy={141}
-                    rx={29}
-                    ry={7}
-                    fill={warm}
-                  />
-                </G>
-              ))}
+              <Rect
+                x={140}
+                y={54}
+                width={40}
+                height={104}
+                rx={8}
+                fill={edge}
+                stroke="#6F7667"
+                strokeWidth={2}
+              />
+              <Circle cx={160} cy={84} r={4} fill="#FFA86B" />
+              <Path d="M160 132v16" stroke={metal} strokeWidth={6} />
+              <Path
+                d="M108 192C108 126 212 126 212 192Z"
+                fill={body}
+                stroke="#F1D5A7"
+                strokeWidth={1.2}
+              />
+              <Path
+                d="M110 190C132 184 188 184 210 190"
+                stroke="#FFCE83"
+                strokeWidth={4}
+                fill="none"
+              />
+              <Ellipse cx={160} cy={192} rx={50} ry={7.5} fill={warm} />
+              <Path d="M124 200h72l24 32H100Z" fill="#FFB65D" opacity={0.09} />
             </G>
           ) : (
-            <G>
-              <Path
-                d="M67 157Q86 65 160 66Q234 65 253 157Z"
-                fill={body}
-                stroke="#B8AB8C"
-              />
-              <Ellipse cx={160} cy={156} rx={91} ry={14} fill={warm} />
-              <Ellipse cx={160} cy={156} rx={74} ry={9} fill="#FFE5A8" />
-            </G>
+            <>
+              <Path d="M160 10v58" stroke={metal} strokeWidth={4} />
+              {f === 1 ? (
+                <G>
+                  {[-1, 0, 1].map((i) => (
+                    <G key={i}>
+                      <Path
+                        d={`M160 63Q${160 + i * 66} 90 ${160 + i * 66} 106`}
+                        fill="none"
+                        stroke={metal}
+                        strokeWidth={4}
+                      />
+                      <Path
+                        d={`M${130 + i * 66} 141q0-54 30-54t30 54Z`}
+                        fill={body}
+                      />
+                      <Ellipse
+                        cx={160 + i * 66}
+                        cy={141}
+                        rx={29}
+                        ry={7}
+                        fill={warm}
+                      />
+                    </G>
+                  ))}
+                </G>
+              ) : (
+                <G>
+                  <Path
+                    d="M67 157Q86 65 160 66Q234 65 253 157Z"
+                    fill={body}
+                    stroke="#B8AB8C"
+                  />
+                  <Ellipse cx={160} cy={156} rx={91} ry={14} fill={warm} />
+                  <Ellipse cx={160} cy={156} rx={74} ry={9} fill="#FFE5A8" />
+                </G>
+              )}
+            </>
           )}
         </G>
       );
@@ -567,6 +839,46 @@ export function DeviceIllustration({
                   <Ellipse cx={x} cy={151} rx={19} ry={8} fill={warm} />
                 </G>
               ))}
+            </>
+          ) : f === 2 ? (
+            <>
+              <Rect x={120} y={66} width={80} height={18} rx={6} fill={edge} />
+              <Path d="M132 84h56" stroke={metal} strokeWidth={8} />
+              <Rect
+                x={92}
+                y={92}
+                width={136}
+                height={76}
+                rx={8}
+                fill={body}
+                stroke="#8F9787"
+                strokeWidth={1.2}
+              />
+              <Rect
+                x={102}
+                y={102}
+                width={116}
+                height={56}
+                rx={5}
+                fill={warm}
+                stroke="#262E25"
+                strokeWidth={5}
+              />
+              {detail && (
+                <Path
+                  d="M110 112h100m-100 12h100m-100 12h100"
+                  stroke="#E3B779"
+                  strokeWidth={1}
+                />
+              )}
+              <Path d="M132 168l-18 42m84-42l18 42" stroke={metal} strokeWidth={7} />
+              <Path d="M96 212h44m80 0h44" stroke={metal} strokeWidth={6} strokeLinecap="round" />
+              <Path
+                d="M116 174L64 238m140-64l52 64"
+                stroke="#FFB65D"
+                opacity={0.13}
+                strokeWidth={14}
+              />
             </>
           ) : (
             <>
@@ -666,17 +978,42 @@ export function DeviceIllustration({
           <G>
             {panel(65, 65, 190, 133)}
             <Rect x={76} y={82} width={167} height={91} rx={7} fill="#171F18" />
-            {Array.from({ length: 10 }, (_, i) => (
-              <Line
-                key={i}
-                x1={86 + i * 16}
-                x2={86 + i * 16}
-                y1={88}
-                y2={167}
-                stroke={f === 2 ? "#FFA461" : "#73816B"}
-                strokeWidth={f === 2 ? 5 : 3}
-              />
-            ))}
+            {f === 0
+              ? Array.from({ length: 7 }, (_, i) => (
+                  <Line
+                    key={i}
+                    x1={86}
+                    x2={233}
+                    y1={92 + i * 11}
+                    y2={92 + i * 11}
+                    stroke="#73816B"
+                    strokeWidth={3}
+                  />
+                ))
+              : Array.from({ length: 10 }, (_, i) => (
+                  <Line
+                    key={i}
+                    x1={86 + i * 16}
+                    x2={86 + i * 16}
+                    y1={88}
+                    y2={167}
+                    stroke={f === 2 ? "#FFA461" : "#73816B"}
+                    strokeWidth={f === 2 ? 5 : 3}
+                  />
+                ))}
+            {f === 1 && (
+              <>
+                <Circle
+                  cx={222}
+                  cy={175}
+                  r={7}
+                  fill={edge}
+                  stroke="#9CA68E"
+                  strokeWidth={1.5}
+                />
+                <Path d="M86 90h20m-20 6h14" stroke="#5F6D59" strokeWidth={2} />
+              </>
+            )}
             {button(230, 185)}
             {feet(74, 198, 174)}
           </G>
@@ -745,93 +1082,125 @@ export function DeviceIllustration({
       break;
     case "tv":
     case "monitor":
-      art = (
-        <G>
-          <Path d="M151 168h18l10 34h-38Z" fill={metal} />
-          <Ellipse cx={160} cy={206} rx={58} ry={5} fill={metal} />
-          <Rect
-            x={item.family === "tv" ? 29 : 41}
-            y={43}
-            width={item.family === "tv" ? 262 : 238}
-            height={135}
-            rx={f === 1 ? 12 : 6}
-            fill="#151C16"
-            stroke="#79816E"
-            strokeWidth={2}
-          />
-          <Rect
-            x={item.family === "tv" ? 35 : 47}
-            y={49}
-            width={item.family === "tv" ? 250 : 226}
-            height={120}
-            rx={3}
-            fill={glass}
-          />
-          <Path
-            d="M48 159L143 70l54 58 34-25 40 56Z"
-            fill="#3D4C41"
-            opacity={0.65}
-          />
-          <Circle cx={228} cy={80} r={21} fill="#D5A775" opacity={0.43} />
-          <Circle cx={160} cy={174} r={1.5} fill="#FFAC70" />
-        </G>
-      );
+      art =
+        item.family === "monitor" && f === 1 ? (
+          <G>
+            <Path d="M150 164h20l9 30h-38Z" fill={metal} />
+            <Ellipse cx={160} cy={198} rx={70} ry={6} fill={metal} />
+            <Rect
+              x={14}
+              y={62}
+              width={292}
+              height={102}
+              rx={7}
+              fill="#151C16"
+              stroke="#79816E"
+              strokeWidth={2}
+            />
+            <Rect x={21} y={69} width={278} height={88} rx={3} fill={glass} />
+            <Path d="M30 150L120 82l48 50 30-22 40 40Z" fill="#3D4C41" opacity={0.65} />
+            <Circle cx={252} cy={94} r={16} fill="#D5A775" opacity={0.43} />
+            <Circle cx={160} cy={172} r={1.5} fill="#FFAC70" />
+          </G>
+        ) : (
+          <G>
+            <Path d="M151 168h18l10 34h-38Z" fill={metal} />
+            <Ellipse cx={160} cy={206} rx={58} ry={5} fill={metal} />
+            <Rect
+              x={item.family === "tv" ? 29 : 41}
+              y={43}
+              width={item.family === "tv" ? 262 : 238}
+              height={135}
+              rx={f === 1 ? 12 : 6}
+              fill="#151C16"
+              stroke="#79816E"
+              strokeWidth={2}
+            />
+            <Rect
+              x={item.family === "tv" ? 35 : 47}
+              y={49}
+              width={item.family === "tv" ? 250 : 226}
+              height={120}
+              rx={3}
+              fill={glass}
+            />
+            <Path
+              d="M48 159L143 70l54 58 34-25 40 56Z"
+              fill="#3D4C41"
+              opacity={0.65}
+            />
+            <Circle cx={228} cy={80} r={21} fill="#D5A775" opacity={0.43} />
+            <Circle cx={160} cy={174} r={1.5} fill="#FFAC70" />
+          </G>
+        );
       break;
     case "fridge":
-      art = (
-        <G>
-          {panel(f === 1 ? 76 : 94, 28, f === 1 ? 168 : 132, 179)}
-          {f === 1 ? (
-            <>
-              <Line
-                x1={160}
-                x2={160}
-                y1={35}
-                y2={200}
-                stroke="#303A30"
-                strokeWidth={3}
-              />
-              <Path d="M147 74v45m26-45v45" stroke="#C4C9B9" strokeWidth={4} />
-            </>
-          ) : (
-            <>
-              <Line
-                x1={99}
-                x2={221}
-                y1={f === 2 ? 97 : 88}
-                y2={f === 2 ? 97 : 88}
-                stroke="#303A30"
-                strokeWidth={3}
-              />
-              <Path d="M207 58v18m0 28v34" stroke="#CED1C0" strokeWidth={4} />
-            </>
-          )}
-          {f === 4 && (
-            <>
-              <Rect
-                x={110}
-                y={52}
-                width={100}
-                height={132}
-                rx={4}
-                fill={glass}
-              />
-              {[78, 108, 138, 168].map((y) => (
+      art =
+        f === 3 ? (
+          <G>
+            <Ellipse cx={160} cy={212} rx={112} ry={8} fill="#050A06" opacity={0.2} />
+            <Rect x={62} y={104} width={196} height={100} rx={12} fill={body} stroke="#9A9C8C" />
+            <Rect x={62} y={88} width={196} height={28} rx={9} fill={edge} stroke="#6F7667" strokeWidth={1.5} />
+            <Line x1={62} x2={258} y1={116} y2={116} stroke="#303A30" strokeWidth={3} />
+            <Path d="M216 122v14" stroke="#CED1C0" strokeWidth={5} strokeLinecap="round" />
+            <Circle cx={84} cy={130} r={5} fill={edge} stroke="#9CA68E" strokeWidth={1.5} />
+            <Path d="M74 158h24" stroke="#EFF3DB" strokeWidth={2} opacity={0.25} />
+            {feet(76, 204, 168)}
+          </G>
+        ) : (
+          <G>
+            {panel(f === 1 ? 76 : 94, 28, f === 1 ? 168 : 132, 179)}
+            {f === 1 ? (
+              <>
                 <Line
-                  key={y}
-                  x1={119}
-                  x2={201}
-                  y1={y}
-                  y2={y}
-                  stroke="#BDA27C"
-                  strokeWidth={4}
+                  x1={160}
+                  x2={160}
+                  y1={35}
+                  y2={200}
+                  stroke="#303A30"
+                  strokeWidth={3}
                 />
-              ))}
-            </>
-          )}
-          {feet(101, 207, 117)}
-        </G>
-      );
+                <Path d="M147 74v45m26-45v45" stroke="#C4C9B9" strokeWidth={4} />
+              </>
+            ) : (
+              <>
+                <Line
+                  x1={99}
+                  x2={221}
+                  y1={f === 2 ? 97 : 88}
+                  y2={f === 2 ? 97 : 88}
+                  stroke="#303A30"
+                  strokeWidth={3}
+                />
+                <Path d="M207 58v18m0 28v34" stroke="#CED1C0" strokeWidth={4} />
+              </>
+            )}
+            {f === 4 && (
+              <>
+                <Rect
+                  x={110}
+                  y={52}
+                  width={100}
+                  height={132}
+                  rx={4}
+                  fill={glass}
+                />
+                {[78, 108, 138, 168].map((y) => (
+                  <Line
+                    key={y}
+                    x1={119}
+                    x2={201}
+                    y1={y}
+                    y2={y}
+                    stroke="#BDA27C"
+                    strokeWidth={4}
+                  />
+                ))}
+              </>
+            )}
+            {feet(101, 207, 117)}
+          </G>
+        );
       break;
     case "washer":
       art = (
@@ -851,6 +1220,23 @@ export function DeviceIllustration({
             <>
               <Rect x={96} y={91} width={127} height={91} rx={10} fill={edge} />
               <Path d="M110 105h99v51h-99Z" fill={glass} />
+            </>
+          ) : f === 1 ? (
+            <>
+              <Rect x={100} y={94} width={120} height={90} rx={9} fill={edge} />
+              <Rect x={112} y={106} width={96} height={66} rx={7} fill={glass} />
+              <Path
+                d="M128 126h64m-64 14h64m-64 14h40"
+                stroke="#A7BAB3"
+                strokeWidth={2.4}
+                opacity={0.5}
+              />
+              <Path
+                d="M106 88h108"
+                stroke="#C4C8B7"
+                strokeWidth={5}
+                strokeLinecap="round"
+              />
             </>
           ) : (
             <>
@@ -1004,6 +1390,26 @@ export function DeviceIllustration({
               </G>
             ))}
           </G>
+        ) : f === 1 ? (
+          <G>
+            {panel(96, 60, 128, 144)}
+            <Path d="M104 78h112" stroke={metal} strokeWidth={6} strokeLinecap="round" />
+            <Rect
+              x={108}
+              y={90}
+              width={104}
+              height={84}
+              rx={9}
+              fill={glass}
+              stroke="#212C22"
+              strokeWidth={5}
+            />
+            <Path d="M116 102h88" stroke="#B6BDAA" strokeWidth={3.4} opacity={0.7} />
+            <Circle cx={120} cy={190} r={5} fill={edge} stroke="#9CA68E" strokeWidth={1.4} />
+            <Circle cx={200} cy={190} r={5} fill={edge} stroke="#9CA68E" strokeWidth={1.4} />
+            {smallDisplay(136, 184, 48)}
+            {feet(104, 204, 112)}
+          </G>
         ) : (
           <G>
             {panel(73, 40, 174, 168)}
@@ -1052,6 +1458,39 @@ export function DeviceIllustration({
             {button(104, 164)}
             {feet(81, 192, 155)}
           </G>
+        ) : f === 2 ? (
+          <G>
+            <Ellipse cx={160} cy={178} rx={86} ry={22} fill={metal} stroke="#A3A58C" />
+            <Ellipse cx={160} cy={152} rx={86} ry={22} fill={body} stroke="#A3A58C" />
+            <Path
+              d="M84 152q38-12 76-12t76 12m-152 10q38-12 76-12t76 12m-140 10q32-9 64-9t64 9"
+              stroke="#9A8E6F"
+              strokeWidth={1.2}
+              fill="none"
+              opacity={0.8}
+            />
+            <Path
+              d="M96 150l20 14m20-18l22 16m22-14l20 14"
+              stroke="#9A8E6F"
+              strokeWidth={1.2}
+              opacity={0.6}
+            />
+            <Circle cx={160} cy={126} r={7} fill={edge} stroke="#919E83" strokeWidth={1.5} />
+            <Path
+              d="M138 112q-4-9 0-18m24 18q4-9 0-18"
+              stroke="#D7DCC8"
+              strokeWidth={3}
+              fill="none"
+              opacity={0.5}
+            />
+            <Path
+              d="M74 190q40 14 86 14t86-14"
+              stroke="#0B130C"
+              strokeWidth={4}
+              fill="none"
+              opacity={0.35}
+            />
+          </G>
         ) : (
           <G>
             <Path
@@ -1098,38 +1537,76 @@ export function DeviceIllustration({
       );
       break;
     case "blender":
-      art = (
-        <G>
-          <Path d="M124 146h72l16 55H108Z" fill={body} stroke="#A9AE94" />
-          {button(160, 175)}
-          <Path
-            d="M119 57h82l-10 91h-62Z"
-            fill={glass}
-            stroke="#B9C2A7"
-            strokeWidth={2}
-          />
-          <Path
-            d="M201 70q38 2 18 51l-20 7"
-            fill="none"
-            stroke={metal}
-            strokeWidth={7}
-          />
-          <Rect x={114} y={47} width={92} height={12} rx={5} fill={edge} />
-          {detail && (
+      art =
+        f === 1 ? (
+          <G>
+            <Path d="M112 102h96l-8 64h-80Z" fill={glass} stroke="#B9C2A7" strokeWidth={2} />
+            <Rect x={106} y={84} width={108} height={18} rx={5} fill={edge} />
+            <Rect x={144} y={58} width={32} height={26} rx={5} fill={edge} />
+            <Rect x={104} y={166} width={112} height={36} rx={8} fill={body} stroke="#A9AE94" />
+            {button(160, 184)}
+            <Path d="M212 118h10v34h-10" fill="none" stroke="#A9AE94" strokeWidth={5} />
+            {detail && (
+              <Path d="M126 118v38m20-38v38m20-38v38" stroke="#BAC6B0" opacity={0.3} />
+            )}
+          </G>
+        ) : f === 2 ? (
+          <G>
+            <Ellipse cx={160} cy={207} rx={56} ry={7} fill="#FFB65D" opacity={0.08} />
+            <Rect x={126} y={124} width={68} height={76} rx={12} fill={body} stroke="#A9AE94" />
+            {button(160, 176)}
+            <Path d="M132 74h56l-6 50h-44Z" fill={glass} stroke="#B9C2A7" strokeWidth={2} />
+            <Ellipse cx={160} cy={74} rx={28} ry={8} fill={edge} />
+            <Circle cx={160} cy={62} r={6} fill={metal} />
+            {detail && (
+              <Path d="M144 88v26m10-26v26m10-26v26" stroke="#BAC6B0" opacity={0.3} />
+            )}
+          </G>
+        ) : f === 3 ? (
+          <G>
+            <Rect x={112} y={128} width={96} height={70} rx={10} fill={body} stroke="#A9AE94" />
+            {button(160, 180)}
+            <Path d="M120 98q40-30 80 0l-10 22h-60Z" fill={edge} stroke="#A3AD98" />
+            <Path d="M164 84v-16" stroke={metal} strokeWidth={6} strokeLinecap="round" />
+            <Path d="M200 102h20l8 10h-22" fill={metal} stroke="#A3A58C" strokeWidth={1} />
+            <Rect x={214} y={118} width={34} height={44} rx={4} fill={glass} stroke="#B9C2A7" strokeWidth={2} />
+            <Path d="M220 142h22m-22 8h22" stroke="#BDA27C" strokeWidth={3} opacity={0.8} />
+            {detail && (
+              <Path d="M134 106q26-16 52 0" stroke="#FFF2D4" strokeWidth={1.4} opacity={0.4} fill="none" />
+            )}
+          </G>
+        ) : (
+          <G>
+            <Path d="M124 146h72l16 55H108Z" fill={body} stroke="#A9AE94" />
+            {button(160, 175)}
             <Path
-              d="M139 69v59m13-54v48m16-50v51"
-              stroke="#BAC6B0"
-              opacity={0.3}
+              d="M119 57h82l-10 91h-62Z"
+              fill={glass}
+              stroke="#B9C2A7"
+              strokeWidth={2}
             />
-          )}
-          <Path
-            d="M139 132l20-9 22 9"
-            stroke="#C1C7AF"
-            strokeWidth={3}
-            fill="none"
-          />
-        </G>
-      );
+            <Path
+              d="M201 70q38 2 18 51l-20 7"
+              fill="none"
+              stroke={metal}
+              strokeWidth={7}
+            />
+            <Rect x={114} y={47} width={92} height={12} rx={5} fill={edge} />
+            {detail && (
+              <Path
+                d="M139 69v59m13-54v48m16-50v51"
+                stroke="#BAC6B0"
+                opacity={0.3}
+              />
+            )}
+            <Path
+              d="M139 132l20-9 22 9"
+              stroke="#C1C7AF"
+              strokeWidth={3}
+              fill="none"
+            />
+          </G>
+        );
       break;
     case "mixer":
       art =
@@ -1172,32 +1649,61 @@ export function DeviceIllustration({
         );
       break;
     case "ricecooker":
-      art = (
-        <G>
-          <Rect
-            x={81}
-            y={75}
-            width={158}
-            height={122}
-            rx={f === 3 ? 23 : 37}
-            fill={body}
-            stroke="#A1AB91"
-          />
-          <Ellipse cx={160} cy={77} rx={77} ry={17} fill={metal} />
-          <Path
-            d="M129 60v-9q30-15 61 0v9"
-            stroke={edge}
-            strokeWidth={10}
-            fill="none"
-          />
-          {smallDisplay(129, 118, 62)}
-          {button(129, 161)}
-          {button(190, 161)}
-          {f === 3 && (
-            <Rect x={124} y={181} width={72} height={12} rx={4} fill={edge} />
-          )}
-        </G>
-      );
+      art =
+        f === 1 ? (
+          <G>
+            <Ellipse cx={160} cy={205} rx={74} ry={8} fill="#FFB65D" opacity={0.08} />
+            <Rect x={92} y={86} width={136} height={112} rx={28} fill={body} stroke="#A1AB91" />
+            <Ellipse cx={160} cy={88} rx={68} ry={14} fill={metal} />
+            <Circle cx={160} cy={76} r={7} fill={edge} stroke="#919E83" strokeWidth={1.5} />
+            <Path
+              d="M150 58q-5-8 0-16m20 16q5-8 0-16"
+              stroke="#D7DCC8"
+              strokeWidth={3.4}
+              fill="none"
+              opacity={0.5}
+            />
+            <Rect x={132} y={152} width={56} height={11} rx={5.5} fill={edge} />
+            <Circle cx={114} cy={157} r={5} fill="#FFA86B" opacity={0.85} />
+            <Path d="M104 104q-6 26 0 52" stroke="#EDF0DA" strokeWidth={3} opacity={0.25} fill="none" />
+          </G>
+        ) : f === 2 ? (
+          <G>
+            <Rect x={104} y={52} width={112} height={148} rx={20} fill={body} stroke="#A1AB91" />
+            <Ellipse cx={160} cy={54} rx={56} ry={11} fill={metal} />
+            <Path d="M136 42h48" stroke={edge} strokeWidth={8} strokeLinecap="round" />
+            <Path d="M120 94q-14 20 -2 44" stroke={metal} strokeWidth={7} fill="none" />
+            <Circle cx={198} cy={100} r={9} fill={edge} stroke="#9CA68E" strokeWidth={1.5} />
+            <Rect x={176} y={124} width={16} height={54} rx={8} fill={glass} stroke="#798574" strokeWidth={0.8} />
+            <Rect x={122} y={134} width={42} height={22} rx={6} fill="#111A16" stroke="#798574" strokeWidth={0.6} />
+            <Path d="M130 145h26m-26 5h18" stroke="#D7BC8C" strokeWidth={1.6} />
+          </G>
+        ) : (
+          <G>
+            <Rect
+              x={81}
+              y={75}
+              width={158}
+              height={122}
+              rx={f === 3 ? 23 : 37}
+              fill={body}
+              stroke="#A1AB91"
+            />
+            <Ellipse cx={160} cy={77} rx={77} ry={17} fill={metal} />
+            <Path
+              d="M129 60v-9q30-15 61 0v9"
+              stroke={edge}
+              strokeWidth={10}
+              fill="none"
+            />
+            {smallDisplay(129, 118, 62)}
+            {button(129, 161)}
+            {button(190, 161)}
+            {f === 3 && (
+              <Rect x={124} y={181} width={72} height={12} rx={4} fill={edge} />
+            )}
+          </G>
+        );
       break;
     case "hood":
       art = (
@@ -1225,41 +1731,72 @@ export function DeviceIllustration({
       );
       break;
     case "computer":
-      art = (
-        <G>
-          {panel(
-            f === 2 ? 87 : 100,
-            f === 2 ? 108 : 31,
-            f === 2 ? 146 : 120,
-            f === 2 ? 87 : 172,
-          )}
-          <Rect
-            x={112}
-            y={f === 2 ? 118 : 44}
-            width={96}
-            height={f === 2 ? 57 : 133}
-            rx={6}
-            fill={f === 1 ? glass : edge}
-          />
-          {f === 1
-            ? [80, 126].map((y) => (
-                <G key={y}>
-                  <Circle
-                    cx={160}
-                    cy={y}
-                    r={22}
-                    fill="#18211B"
-                    stroke="#BA956B"
-                    strokeWidth={3}
-                  />
-                  <Circle cx={160} cy={y} r={8} fill={metal} />
-                </G>
-              ))
-            : vents(124, f === 2 ? 131 : 57, f === 2 ? 5 : 14, 72)}
-          {button(160, f === 2 ? 186 : 190)}
-          {feet(107, 203, 105)}
-        </G>
-      );
+      art =
+        f === 3 ? (
+          <G>
+            {panel(84, 104, 152, 96)}
+            {[0, 1, 2, 3].map((i) => (
+              <G key={i}>
+                <Rect
+                  x={98}
+                  y={116 + i * 18}
+                  width={104}
+                  height={12}
+                  rx={3}
+                  fill={edge}
+                  stroke="#798574"
+                  strokeWidth={0.6}
+                />
+                <Circle cx={214} cy={122 + i * 18} r={2.4} fill={i < 2 ? "#A7BA8E" : "#57634E"} />
+                <Line
+                  x1={104}
+                  x2={196}
+                  y1={122 + i * 18}
+                  y2={122 + i * 18}
+                  stroke="#0C140E"
+                  strokeWidth={1}
+                  opacity={0.5}
+                />
+              </G>
+            ))}
+            {button(160, 190)}
+            {feet(92, 200, 136)}
+          </G>
+        ) : (
+          <G>
+            {panel(
+              f === 2 ? 87 : 100,
+              f === 2 ? 108 : 31,
+              f === 2 ? 146 : 120,
+              f === 2 ? 87 : 172,
+            )}
+            <Rect
+              x={112}
+              y={f === 2 ? 118 : 44}
+              width={96}
+              height={f === 2 ? 57 : 133}
+              rx={6}
+              fill={f === 1 ? glass : edge}
+            />
+            {f === 1
+              ? [80, 126].map((y) => (
+                  <G key={y}>
+                    <Circle
+                      cx={160}
+                      cy={y}
+                      r={22}
+                      fill="#18211B"
+                      stroke="#BA956B"
+                      strokeWidth={3}
+                    />
+                    <Circle cx={160} cy={y} r={8} fill={metal} />
+                  </G>
+                ))
+              : vents(124, f === 2 ? 131 : 57, f === 2 ? 5 : 14, 72)}
+            {button(160, f === 2 ? 186 : 190)}
+            {feet(107, 203, 105)}
+          </G>
+        );
       break;
     case "laptop":
       art =
@@ -1503,13 +2040,36 @@ export function DeviceIllustration({
             f === 2 ? 179 : 162,
           )}
           {smallDisplay(f === 2 ? 136 : 136, 61, f === 2 ? 48 : 47)}
-          {vents(
-            f === 2 ? 135 : 114,
-            100,
-            f === 2 ? 18 : 16,
-            f === 2 ? 50 : 92,
+          {f === 1 ? (
+            <>
+              {vents(114, 100, 5, 92)}
+              <Rect
+                x={109}
+                y={138}
+                width={102}
+                height={60}
+                rx={8}
+                fill={edge}
+                stroke="#798574"
+                strokeWidth={1}
+              />
+              <Rect x={116} y={152} width={88} height={38} rx={5} fill={glass} opacity={0.75} />
+              <Path
+                d="M134 146h52"
+                stroke="#9CA68E"
+                strokeWidth={2.5}
+                strokeLinecap="round"
+              />
+            </>
+          ) : (
+            vents(
+              f === 2 ? 135 : 114,
+              100,
+              f === 2 ? 18 : 16,
+              f === 2 ? 50 : 92,
+            )
           )}
-          {button(160, 188)}
+          {button(f === 1 ? 200 : 160, f === 1 ? 72 : 188)}
           {f === 3 && <Path d="M220 114h20v55h-20" fill={edge} />}
         </G>
       );
@@ -1528,6 +2088,29 @@ export function DeviceIllustration({
               fill={glass}
               stroke="#9B8764"
               strokeWidth={5}
+            />
+          </G>
+        ) : f === 2 ? (
+          <G>
+            <Path
+              d="M118 100q-4-58 66-60t76 62"
+              fill="none"
+              stroke="#293729"
+              strokeWidth={11}
+            />
+            <Rect x={94} y={124} width={132} height={72} rx={22} fill={body} stroke="#97A68A" />
+            <Rect x={110} y={138} width={42} height={12} rx={6} fill={edge} />
+            <Circle cx={192} cy={160} r={13} fill={edge} stroke="#718166" strokeWidth={3} />
+            <Path d="M234 132q26 10 18 42l-8 24" stroke={metal} strokeWidth={8} fill="none" />
+            <Path d="M228 202h42v10h-46Z" fill={edge} />
+            <Circle cx={108} cy={200} r={9} fill={edge} stroke="#718166" strokeWidth={3} />
+            <Circle cx={210} cy={200} r={9} fill={edge} stroke="#718166" strokeWidth={3} />
+            <Path
+              d="M124 108q-3-8 0-16m16 14q-3-8 0-16"
+              stroke="#D7DCC8"
+              strokeWidth={3}
+              fill="none"
+              opacity={0.5}
             />
           </G>
         ) : (
@@ -1583,12 +2166,26 @@ export function DeviceIllustration({
           <Ellipse cx={160} cy={126} rx={25} ry={12} fill={edge} />
           <Ellipse cx={160} cy={121} rx={25} ry={11} fill={metal} />
           {button(202, 148)}
-          <Path
-            d="M78 174q82 33 163-2"
-            stroke="#0B130C"
-            strokeWidth={5}
-            fill="none"
-          />
+          {f === 1 ? (
+            <>
+              <Rect x={104} y={166} width={112} height={13} rx={6.5} fill={glass} opacity={0.8} />
+              <Path
+                d="M92 186q68 14 136 0"
+                stroke="#7FA1B8"
+                strokeWidth={6}
+                strokeLinecap="round"
+                opacity={0.75}
+                fill="none"
+              />
+            </>
+          ) : (
+            <Path
+              d="M78 174q82 33 163-2"
+              stroke="#0B130C"
+              strokeWidth={5}
+              fill="none"
+            />
+          )}
         </G>
       );
       break;
@@ -1628,6 +2225,36 @@ export function DeviceIllustration({
             <Path d="M167 137l39 60-25 13-41-69Z" fill={body} />
             {vents(209, 83, 8, 25)}
           </G>
+        ) : f === 1 ? (
+          <G>
+            <Rect x={142} y={78} width={36} height={74} rx={16} fill={body} stroke="#ADB99A" />
+            <Rect x={146} y={148} width={28} height={54} rx={12} fill={edge} />
+            {button(160, 118)}
+            <Ellipse cx={160} cy={58} rx={34} ry={19} fill={edge} stroke="#718166" strokeWidth={3} />
+            {[0, 1, 2].flatMap((row) =>
+              [-22, -11, 0, 11, 22].map((dx) => (
+                <Circle
+                  key={`${row}${dx}`}
+                  cx={160 + dx}
+                  cy={50 + row * 9}
+                  r={2.4}
+                  fill="#C6D2B4"
+                  opacity={0.85}
+                />
+              )))
+            }
+            <Path d="M138 54q-10-4-8-14m52 14q10-4 8-14" stroke="#D7DCC8" strokeWidth={3} fill="none" opacity={0.5} />
+          </G>
+        ) : f === 2 ? (
+          <G>
+            <Rect x={124} y={46} width={72} height={28} rx={11} fill={edge} stroke="#798574" strokeWidth={2} />
+            <Path d="M140 54v10m18-10v10m18-10v10" stroke="#0C140E" strokeWidth={2.4} />
+            <Path d="M138 74h44l-4 112h-36Z" fill={body} stroke="#ADB99A" />
+            {button(160, 106)}
+            {[132, 160, 188].map((x) => (
+              <Circle key={x} cx={x} cy={176} r={2.6} fill="#DCBC84" />
+            ))}
+          </G>
         ) : (
           <G>
             <Rect
@@ -1646,25 +2273,36 @@ export function DeviceIllustration({
         );
       break;
     case "printer":
-      art = (
-        <G>
-          <Rect x={102} y={34} width={116} height={62} rx={3} fill="#D8DFCB" />
-          <Path
-            d="M117 46h85m-85 8h85m-85 8h61"
-            stroke="#8D9F83"
-            strokeWidth={1.5}
-          />
-          {panel(62, 82, 196, 100)}
-          <Rect x={77} y={113} width={167} height={24} rx={4} fill={edge} />
-          {button(229, 98)}
-          <Path d="M100 139h120v66H100Z" fill="#CFD7C1" />
-          <Path
-            d="M114 153h91m-91 8h91m-91 8h74m-74 8h91"
-            stroke="#8E9F84"
-            strokeWidth={1.6}
-          />
-        </G>
-      );
+      art =
+        f === 1 ? (
+          <G>
+            <Rect x={86} y={108} width={148} height={78} rx={9} fill={body} stroke="#9D9F8F" />
+            <Rect x={100} y={82} width={120} height={30} rx={5} fill={edge} stroke="#6F7667" strokeWidth={1.4} />
+            <Path d="M112 96h96" stroke="#788272" strokeWidth={2} opacity={0.8} />
+            <Rect x={112} y={186} width={96} height={13} rx={4} fill={edge} />
+            <Circle cx={96} cy={136} r={3} fill="#A7BA8E" />
+            {button(214, 128)}
+            <Circle cx={96} cy={152} r={3} fill="#57634E" />
+          </G>
+        ) : (
+          <G>
+            <Rect x={102} y={34} width={116} height={62} rx={3} fill="#D8DFCB" />
+            <Path
+              d="M117 46h85m-85 8h85m-85 8h61"
+              stroke="#8D9F83"
+              strokeWidth={1.5}
+            />
+            {panel(62, 82, 196, 100)}
+            <Rect x={77} y={113} width={167} height={24} rx={4} fill={edge} />
+            {button(229, 98)}
+            <Path d="M100 139h120v66H100Z" fill="#CFD7C1" />
+            <Path
+              d="M114 153h91m-91 8h91m-91 8h74m-74 8h91"
+              stroke="#8E9F84"
+              strokeWidth={1.6}
+            />
+          </G>
+        );
       break;
     case "speaker":
       art =
@@ -1680,6 +2318,15 @@ export function DeviceIllustration({
               stroke="#A1AF91"
             />
             {vents(48, 128, 7, 224)}
+          </G>
+        ) : f === 3 ? (
+          <G>
+            <Rect x={78} y={66} width={164} height={140} rx={16} fill={body} stroke="#A1AF91" />
+            <Rect x={92} y={84} width={48} height={15} rx={7.5} fill="#111A12" />
+            <Circle cx={160} cy={146} r={50} fill={edge} stroke="#849577" strokeWidth={3} />
+            <Circle cx={160} cy={146} r={36} fill={body} />
+            <Circle cx={160} cy={146} r={17} fill={metal} />
+            <Circle cx={148} cy={132} r={10} fill="#ACB6A1" opacity={0.11} />
           </G>
         ) : (
           <G>
@@ -1762,49 +2409,78 @@ export function DeviceIllustration({
         );
       break;
     case "camera":
-      art = (
-        <G>
-          <Path d="M153 168h14l16 28h-46Z" fill={metal} />
-          <Ellipse cx={160} cy={202} rx={49} ry={8} fill={body} />
-          {panel(104, 52, 112, 113)}
-          <Circle
-            cx={160}
-            cy={107}
-            r={40}
-            fill={edge}
-            stroke="#8D9F7F"
-            strokeWidth={3}
-          />
-          <Circle cx={160} cy={107} r={26} fill={glass} />
-          <Circle cx={160} cy={107} r={12} fill="#15241C" />
-          <Circle cx={151} cy={98} r={7} fill="#C6D2B4" opacity={0.36} />
-          <Circle cx={191} cy={145} r={2.5} fill="#EFAC72" />
-        </G>
-      );
+      art =
+        f === 1 ? (
+          <G>
+            <Path d="M204 96L234 62" stroke={metal} strokeWidth={5} strokeLinecap="round" />
+            <Circle cx={236} cy={60} r={4.5} fill={edge} stroke="#8C9386" strokeWidth={1} />
+            <Path d="M152 166h16l16 30h-48Z" fill={metal} />
+            <Ellipse cx={160} cy={202} rx={47} ry={8} fill={body} />
+            <Rect x={108} y={58} width={104} height={108} rx={22} fill={body} stroke="#9EAD8C" strokeWidth={1.2} />
+            <Circle cx={160} cy={110} r={31} fill={edge} stroke="#8D9F7F" strokeWidth={3} />
+            <Circle cx={160} cy={110} r={19} fill={glass} />
+            <Circle cx={160} cy={110} r={9} fill="#15241C" />
+            <Circle cx={152} cy={102} r={5} fill="#C6D2B4" opacity={0.36} />
+            <Circle cx={132} cy={146} r={4} fill="#EFAC72" />
+            <Rect x={136} y={70} width={48} height={9} rx={4.5} fill={edge} />
+            <Circle cx={196} cy={152} r={2.5} fill="#FFA86B" />
+          </G>
+        ) : (
+          <G>
+            <Path d="M153 168h14l16 28h-46Z" fill={metal} />
+            <Ellipse cx={160} cy={202} rx={49} ry={8} fill={body} />
+            {panel(104, 52, 112, 113)}
+            <Circle
+              cx={160}
+              cy={107}
+              r={40}
+              fill={edge}
+              stroke="#8D9F7F"
+              strokeWidth={3}
+            />
+            <Circle cx={160} cy={107} r={26} fill={glass} />
+            <Circle cx={160} cy={107} r={12} fill="#15241C" />
+            <Circle cx={151} cy={98} r={7} fill="#C6D2B4" opacity={0.36} />
+            <Circle cx={191} cy={145} r={2.5} fill="#EFAC72" />
+          </G>
+        );
       break;
     case "pump":
-      art = (
-        <G>
-          <Path d="M96 183h147v18H96Z" fill={edge} />
-          <Circle
-            cx={129}
-            cy={139}
-            r={45}
-            fill={body}
-            stroke="#9EAD8C"
-            strokeWidth={2}
-          />
-          <Circle cx={129} cy={139} r={22} fill={metal} />
-          <Path d="M162 105h77v70h-77Z" fill={body} />
-          {vents(172, 113, 10, 59)}
-          <Path
-            d="M99 104V73h28v25m103 75h34v-24"
-            stroke={metal}
-            strokeWidth={15}
-            fill="none"
-          />
-        </G>
-      );
+      art =
+        f === 1 ? (
+          <G>
+            <Path d="M160 88V66" stroke="#293729" strokeWidth={6} />
+            <Rect x={140} y={60} width={40} height={28} rx={5} fill={edge} stroke="#798574" strokeWidth={1} />
+            <Rect x={62} y={112} width={196} height={52} rx={26} fill={body} stroke="#9EAD8C" strokeWidth={2} />
+            <Rect x={50} y={104} width={18} height={68} rx={4} fill={metal} />
+            <Rect x={252} y={104} width={18} height={68} rx={4} fill={metal} />
+            <Circle cx={160} cy={138} r={25} fill={edge} stroke="#718166" strokeWidth={4} />
+            <Circle cx={160} cy={138} r={11} fill={metal} />
+            <Path d="M100 186h120" stroke="#293729" strokeWidth={3} opacity={0.5} />
+            <Rect x={100} y={186} width={120} height={9} rx={4} fill={edge} />
+          </G>
+        ) : (
+          <G>
+            <Path d="M96 183h147v18H96Z" fill={edge} />
+            <Circle
+              cx={129}
+              cy={139}
+              r={45}
+              fill={body}
+              stroke="#9EAD8C"
+              strokeWidth={2}
+            />
+            <Circle cx={129} cy={139} r={22} fill={metal} />
+            <Path d="M162 105h77v70h-77Z" fill={body} />
+            {vents(172, 113, 10, 59)}
+            <Path
+              d="M99 104V73h28v25m103 75h34v-24"
+              stroke={metal}
+              strokeWidth={15}
+              fill="none"
+            />
+          </G>
+        );
       break;
     case "aquarium":
       art =
