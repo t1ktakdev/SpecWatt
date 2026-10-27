@@ -216,6 +216,85 @@ test('an ordinary offline logout still clears its own session exactly once', asy
   assert.equal(await vault.get(baseUrl), null);
 });
 
+// --- Night-watchdog round 2: the HTTP status of an error is authoritative,
+// --- whatever syntactically valid JSON shape the payload has.
+
+test('an authorized 401 keeps its HTTP status across unusable payload shapes and clears the vault', async () => {
+  for (const body of ['null', '[]', '42', '"boom"', '{"detail":"plain"}']) {
+    const vault = createTokenVault(false);
+    await vault.clear(baseUrl);
+    await vault.set(baseUrl, 'live-session');
+    const client = clientWith(async () => new Response(body, { status: 401 }), vault);
+    await assert.rejects(
+      () => client.controllers(),
+      (error) => error.code === 'http_401',
+      body,
+    );
+    assert.equal(await vault.get(baseUrl), null, body);
+  }
+});
+
+test('a login 401 with a null body reports the status and keeps a live session', async () => {
+  const vault = createTokenVault(false);
+  await vault.clear(baseUrl);
+  await vault.set(baseUrl, 'other-live-session');
+  const client = clientWith(async () => new Response('null', { status: 401 }), vault);
+  await assert.rejects(
+    () => client.authenticate('login', 'owner@example.test', 'password-1234'),
+    (error) => error.code === 'http_401',
+  );
+  assert.equal(await vault.get(baseUrl), 'other-live-session');
+});
+
+test('429 and 5xx with a bad payload shape report the status without any retry', async () => {
+  let getCalls = 0;
+  const limited = clientWith(async () => {
+    getCalls += 1;
+    return new Response('null', { status: 429 });
+  }, vaultWith('token'), { retryDelayMs: 1 });
+  await assert.rejects(
+    () => limited.controllers(),
+    (error) => error.code === 'http_429',
+  );
+  assert.equal(getCalls, 1);
+
+  let postCalls = 0;
+  const busy = clientWith(async () => {
+    postCalls += 1;
+    return new Response('[]', { status: 503 });
+  }, vaultWith('token'), { retryDelayMs: 1 });
+  await assert.rejects(
+    () => busy.command('stand1', 'CH1', true, 'busy-shape-001'),
+    (error) => error.code === 'http_503',
+  );
+  assert.equal(postCalls, 1);
+});
+
+test('an oversize error body still reports its HTTP status; an oversize success body is invalid', async () => {
+  const oversized = 'x'.repeat(250001);
+  const vault = createTokenVault(false);
+  await vault.clear(baseUrl);
+  await vault.set(baseUrl, 'live-session');
+  const unauthorized = clientWith(
+    async () => new Response(oversized, { status: 401 }),
+    vault,
+  );
+  await assert.rejects(
+    () => unauthorized.controllers(),
+    (error) => error.code === 'http_401',
+  );
+  assert.equal(await vault.get(baseUrl), null);
+
+  const bloated = clientWith(
+    async () => new Response(oversized, { status: 200 }),
+    vaultWith('token'),
+  );
+  await assert.rejects(
+    () => bloated.controllers(),
+    (error) => error.code === 'invalid_response',
+  );
+});
+
 // --- Native vault serialization must hold across instances (one shared SESSION_KEY).
 
 test('two native vault instances sharing one backing store serialize their writes', async () => {

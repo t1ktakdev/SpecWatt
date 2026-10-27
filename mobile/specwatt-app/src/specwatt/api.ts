@@ -368,6 +368,27 @@ export class BrainClient {
     if ((await this.vault.get(this.baseUrl)) === token)
       await this.vault.clear(this.baseUrl);
   }
+  /** Validated business code inside an error payload, or null when the shape is unusable. */
+  private errorCode(raw: string): string | null {
+    if (raw.length > 250000) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+    try {
+      const detail = object(parsed).detail;
+      if (detail && typeof detail === "object" && "code" in detail) {
+        const code = detail.code;
+        if (typeof code === "string" && /^[a-z0-9_-]{1,80}$/.test(code))
+          return code;
+      }
+    } catch {
+      // null/primitive/array payload or detail: the HTTP status answers instead.
+    }
+    return null;
+  }
   private async request(
     path: string,
     method = "GET",
@@ -418,32 +439,20 @@ export class BrainClient {
         }
         if (response.status === 204 && response.ok) return null;
         const raw = await response.text();
+        if (!response.ok) {
+          // The HTTP status is authoritative for every error: a syntactically
+          // valid but wrong-shaped payload (null, primitive, array, oversize)
+          // must not mask an authentication or server failure. A real backend
+          // business code still wins when the shape carries one.
+          throw new ApiError(this.errorCode(raw) ?? `http_${response.status}`);
+        }
         if (raw.length > 250000) throw new ApiError("invalid_response");
-        let result: unknown = null;
-        let parsed = true;
+        let result: unknown;
         try {
           result = JSON.parse(raw);
         } catch {
-          parsed = false;
+          throw new ApiError("invalid_response");
         }
-        if (!response.ok) {
-          // A non-JSON error body (proxy/gateway) is still an HTTP-level
-          // failure worth reporting as its status, not as a broken contract.
-          if (parsed) {
-            const detail = object(result).detail;
-            const code =
-              detail && typeof detail === "object" && "code" in detail
-                ? detail.code
-                : null;
-            if (
-              typeof code === "string" &&
-              /^[a-z0-9_-]{1,80}$/.test(code)
-            )
-              throw new ApiError(code);
-          }
-          throw new ApiError(`http_${response.status}`);
-        }
-        if (!parsed) throw new ApiError("invalid_response");
         return result;
       } catch (error) {
         failure = signal?.aborted

@@ -191,6 +191,23 @@ An independent night review reported a reproducible defect in `BrainClient.logou
 - Native `clear(baseUrl)` additionally mirrors the web vault: it deletes the shared record only when it belongs to that server (logout no longer routes through `clear()` at all).
 - **CI follow-up on the same push:** the static repo-hygiene test `security/test_repo_hygiene.py::test_401_clears_the_local_vault` asserts the literal `await this.vault.clear(this.baseUrl)` in `api.ts` — a string that previously existed only in the defective logout path removed by this fix. Resolved without touching `security/**`: the compare-and-clear fallback moved from a module function into a private `BrainClient.invalidateToken(token)` operating on `this.vault`, so the asserted line now genuinely represents the safe scoped clear (the 401 path still clears the local vault — exactly the test's intent). `python -m unittest discover -s security -q`: OK, exit 0 locally; full `npm test` 155/0 unchanged.
 
+## 11.6 Night-watchdog round 2: HTTP error status masked by payload shape (2026-10-28, HEAD f19e7a7)
+
+Confirmed with the coordinator's reproducer (`evidence/D/repro-http401-shape.mjs`, present on disk this time): an authorized **401 with a syntactically valid JSON `null` body** (same for primitive/array) surfaced as `invalid_response` with `sessionFailure=false`, although the vault had already been cleared (`vaultCleared=true, calls=1`). `server-request-scope.isSessionFailure('invalid_response')` is false, so the server screen did not reset the session until the next action — the expired-token path lost its HTTP status to a payload-shape error.
+
+### Fix (src/specwatt/api.ts)
+
+The error branch now treats the **HTTP status as authoritative**: `request()` reads the body, and for `!response.ok` throws `this.errorCode(raw) ?? http_<status>`. `errorCode` returns a validated backend business code only when the payload is the expected `{detail:{code}}` object shape (bounded at the same 250 KB limit; oversize/unparseable/wrong-shape/null-primitive-array payloads yield `null`). Priority therefore: real backend business codes (`invalid_session`, `invalid_credentials`, `rate_limited`, `peak_exceeded`, …) win; every unusable payload reports the true HTTP status. `http_401` is already a session failure in `server-request-scope.isSessionFailure`, so the screen now clears the stale session immediately; a dedicated RU/KY `http_401` message was added to the server screen's own strings.
+
+Invariants re-pinned by regression (RED first, then GREEN): auth-401 with `null`/`[]`/`42`/`"boom"`/`{"detail":"plain"}` → `http_401` with the vault cleared; login-401 with a `null` body → `http_401` while a live session token survives (failed-login rule intact); 429 and 503 with bad shapes → `http_429`/`http_503` with the request counter proving exactly one attempt — no retry, no mutation repeat, no `network_error` transformation (transient codes remain `network_error`/`request_timeout` only, so safe-GET recovery stays capped at one extra attempt for real transport errors); oversize 401 body → `http_401`, oversize success body → `invalid_response` (both sides of the 250 KB guard pinned). No stale-401 token clearing and no failed-login logout were regressed — the round-1 suite still passes unchanged.
+
+### Evidence
+
+- Reproducer on `f19e7a7`: exit 1 with `{"code":"invalid_response","sessionFailure":false,"vaultCleared":true,"calls":1}`; after the fix: **exit 0**.
+- `node --experimental-strip-types --test tests/zcode-server-resilience.test.mjs`: **36 pass / 0 fail** (was 32).
+- Full `npm test`: **159 pass / 0 fail / 0 skipped**; `npm run typecheck` exit 0; `npm run lint` exit 0.
+- `python -m unittest discover -s security -q`: OK, exit 0 (static repo-hygiene contract intact); `python security/scan_secrets.py`: clean, exit 0; `git diff --check`: clean.
+
 ## 12. Commit list
 
 All commits authored as `ZCode Mobile Server Resilience Agent <zcode-mobile-server@localhost>` (own identity; the shared repo config of other agents was never modified).
