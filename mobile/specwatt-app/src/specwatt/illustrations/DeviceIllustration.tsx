@@ -497,7 +497,7 @@ export function DeviceIllustration({
       const hardware = f === 0 || f === 3,
         extractor = f === 3,
         floorFan = f === 2;
-      const headY = floorFan ? 84 : 122,
+      const headY = hardware ? 119 : floorFan ? 84 : 122,
         headR = floorFan ? 54 : 66;
       art = (
         <G>
