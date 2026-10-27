@@ -6,7 +6,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 
 ## What was implemented
 
-1. **22 illustration families now render a distinct artwork per catalogue form.** Before the fix, 32 pairs (and one quadruple) of categories rendered pixel-identical vectors because most `DeviceIllustration` branches keyed on `family` and ignored `form`. Every distinction is new inline SVG in the existing Warm Graphite palette (body/edge/metal/glass/warm gradients, existing accent strokes) inside the fixed `viewBox="0 0 320 240"`; no categories, palette, catalog screen, or bundled photos were changed. The approved defaults are untouched: `mushroom-lamp` (CH1 vector fallback), `led` art, `pc-fan` art, and all seven bundled PNGs stay exactly as approved.
+1. **22 illustration families now render a distinct artwork per catalogue form.** Before the fix, 32 pairs (and one quadruple) of categories rendered pixel-identical vectors because most `DeviceIllustration` branches keyed on `family` and ignored `form`. Every distinction is new inline SVG in the existing Warm Graphite palette (body/edge/metal/glass/warm gradients, existing accent strokes) inside the fixed `viewBox="0 0 320 240"`; no categories, palette, catalog screen, or bundled photos were changed. The approved reference primitives are preserved byte-for-byte where they remain the default (the `mushroom-lamp` dome for CH1, the pc-fan frame/blade/cable geometry — the fan head stays at its original y=119, the led coil now belongs to `led-reel`, so CH2's default *vector fallback* intentionally draws the new serpentine strip instead of the coil; the bundled photos shown by default are unchanged).
    - lamp: desk-lamp (task lamp, angled arm + cone shade) and bedside-lamp (drum shade on stem base) split from the mushroom dome
    - led: led-strip becomes a serpentine strip with modules and plug (led-reel keeps the coil)
    - bulb: filament-bulb gets a taller envelope with curl-filament (smart-bulb keeps the LED zigzag)
@@ -30,8 +30,9 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
    - monitor: ultrawide-monitor now really wide and low (292×102 screen vs 238×135 standard)
 2. **`defaultDeviceConfig` image selection fix** (`src/specwatt/device-visual.tsx`): `image === "appliance"` fell back to the `unknown` box although the bundled `appliance.png` is a kettle; it now falls back to the `kettle` vector so a photo→vector degradation stays semantically consistent. All other mappings unchanged (charger→phone-charger, socket→smart-socket, CH2→led-strip, CH3→pc-fan, default→mushroom-lamp).
 3. **Regression tests (new, deterministic, no new dependencies):**
-   - `tests/zcode-device-visual-forms.test.mjs` — transpiles the real `DeviceIllustration.tsx` + real `catalog.ts` (typescript compiler + `node:vm`, the same harness pattern as the pre-existing `native-layout.test.mjs`) and asserts: every one of the 119 categories renders inside `viewBox="0 0 320 240"`; hostile config values never leak into the tree; every gradient stop is a valid numeric/percentage offset in non-decreasing order per gradient; **all categories of one family render pairwise-distinct artwork trees** (this is the test that failed with 32 duplicate pairs before the fix); the ultrawide screen is >24 px wider than the standard monitor.
-   - `tests/zcode-device-visual-defaults.test.mjs` — loads the real `device-visual.tsx` with the real `appearance-policy`/`photo-policy`/catalog (only expo-filesystem and the asset registry mocked) and asserts the full §9 scenario chain: bundled photo by default; photo renders only while the owned file exists; vanished photo → default vector; `onError` → vector on next render; appearance persisted against a category that no longer exists → bundled photo remains; `https:`/traversal photo URIs rejected by the real policy → bundled photo; unmapped/hostile `image` ids → vector, never a broken `<Image>`; scene mode paints the Warm Graphite backdrop.
+   - `tests/zcode-device-visual-forms.test.mjs` — transpiles the real `DeviceIllustration.tsx` + real `catalog.ts` (typescript compiler + `node:vm`, the same harness pattern as the pre-existing `native-layout.test.mjs`) and asserts: every one of the 119 categories renders inside `viewBox="0 0 320 240"`; hostile config values are rejected and render exactly the safe `unknown` fallback tree (with the validation-rejection cases also covered in the pre-existing `illustrations.test.mjs`); every gradient stop is a valid numeric/percentage offset in non-decreasing order per gradient; **all categories of one family render pairwise-distinct artwork trees** — the signature covers geometry, fills/strokes, gradient stop colors and text content (this is the test that failed with 32 duplicate pairs before the fix); the ultrawide screen is >24 px wider than the standard monitor; and the art stays hook-free beyond `useId` (the harness fails loudly on new hooks).
+   - `tests/zcode-device-visual-defaults.test.mjs` — loads the real `device-visual.tsx` with the real `appearance-policy`/`photo-policy`/catalog (only expo-filesystem and the asset registry mocked) and asserts the full §9 scenario chain: a valid persisted vector config renders with its exact stored config; every bundled image id renders through the bundled branch; photo renders only while the owned file exists; vanished photo → default vector; `onError` → vector on next render; appearance persisted against a category that no longer exists → bundled photo remains; `https:`/traversal photo URIs rejected by the real policy → bundled photo; unmapped/hostile `image` ids → vector, never a broken `<Image>`; scene mode paints the Warm Graphite backdrop.
+   - `tests/zcode-device-visual-photos.test.mjs` — the real `photos.ts` native composition against an in-memory filesystem (only `expo-file-system`/`expo-image-picker`/`expo-image-manipulator` faked; all policy decisions run the real `photo-policy`): import lands a generated JPEG in the owned directory and cleans the manipulator cache with released contexts; canceled picker creates nothing; oversized source rejected before any owned write and over-cap manipulator output rejected at the write gate; concurrent import → `photo-busy`; prune keeps used photos, never touches foreign names, deletes only orphan generated JPEGs; clear removes all; `devicePhotoExists` gates on ownership, existence, size cap and IO/permission failure (trap); on web the module never touches the filesystem and import throws `photo-unsupported`.
    - Red/green evidence: the forms test failed at baseline with the full duplicate list (e.g. `lamp: desk-lamp renders identical to mushroom-lamp`); the defaults test failed with `appliance` → `unknown` before the fix (verified by temporarily reverting the one-line mapping, `pass 5 / fail 1`, then restoring).
 
 ## Verification log (mobile/specwatt-app unless noted)
@@ -45,7 +46,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 | `npm run lint` (baseline) | exit 0 |
 | `node --test tests/zcode-device-visual-forms.test.mjs` (RED, before fix) | 3 pass / 2 fail with 32 identical-pair findings + ultrawide width 238=238 |
 | `node --test tests/zcode-device-visual-defaults.test.mjs` (RED, one-line revert of `appliance` mapping) | 5 pass / 1 fail (`expected 'kettle', got 'unknown'`) |
-| `npm test` (after fixes) | **125 pass / 0 fail, exit 0** (114 pre-existing + 11 new; no existing test modified) |
+| `npm test` (after fixes and review fixes) | **135 pass / 0 fail, exit 0** (114 pre-existing + 21 new across three files; no existing test modified) |
 | `npm run typecheck` (after fixes) | exit 0 |
 | `npm run lint` (after fixes) | exit 0 |
 | `python security/scan_secrets.py` (repo root) | `SECRET SCAN: clean (tracked worktree files)`, exit 0 |
@@ -59,7 +60,7 @@ Measured on the local Expo web preview (`npx expo start --web`, Chromium viewpor
 
 - The virtualized catalogue renders **25 `<svg>` elements for 119 categories** on load (existing FlatList tuning `initialNumToRender=6`, `maxToRenderPerBatch=6`, `windowSize=5` is doing its job; no new memo was added because no measured bottleneck exists at this scale).
 - 1454 SVG child nodes / 1648 DOM nodes total on the catalogue screen; navigation `DOMContentLoaded` ≈ 291 ms in the dev server.
-- New art adds ≤ 15 nodes per changed form; the heaviest family (`led` coil, ~150 nodes) is unchanged in shape count.
+- New art adds at most 17 nodes per changed form (largest: hair-styler, 38→55 total); several changed forms actually reduce node count (led-strip, extractor-fan). The heaviest family (`led` coil, ~150 nodes) is unchanged in shape count.
 - **Native Android rendering, memory and pixel-ratio behaviour: N/A — no emulator was available in this session** (see limitations). `devicePhotoExists` performs a synchronous per-render existence stat (≤ 3 files per screen); left as-is deliberately — replacing it with a cache would need invalidation wiring through `photos.ts` mutation paths and cannot be measured or verified without a device.
 
 ## Visual evidence and provenance
@@ -108,11 +109,31 @@ All evidence in this run is **browser preview or static PNG inspection — none 
 2. **`src/app/setup.tsx` — photo import error message.** `choosePhoto()` catches every `PhotoError` code (busy/too-large/unsupported/…) into the single generic `errPhoto` string. The error codes exist in `photo-policy.ts`; mapping `e.code` to distinct dictionary keys would make "file too large" vs "permission denied" distinguishable. Proposed but not applied (dictionary files are outside this mission's file list).
 3. **`src/app/index.tsx`** — onboarding hero photo sizing (known visual-QA issue) needs its owner's review; the bundled asset is fine.
 
+## Code review (two independent read-only reviewers, main agent dispositions)
+
+Reviewer A (architecture/security) independently re-derived the 32-duplicate baseline, ran geometry-bounds checks over all 119 renders and greps of the diff. Reviewer B (tests/scenarios) re-ran all suites, reproduced the red baseline from the base commit in a temp dir and mapped every mission scenario to its coverage. Both returned CHANGES-REQUESTED with no P0. Dispositions of every non-note finding:
+
+| Finding | Severity | Disposition |
+| --- | --- | --- |
+| Doc claimed a Draft PR before it existed | P1 | Resolved by actually pushing and opening the Draft PR (URL in the final commit of this branch); doc corrected to record the real state at each commit. |
+| `photos.ts` native paths (`importDevicePhoto`, `pruneDevicePhotos`, real `devicePhotoExists`) had zero automated coverage | P1 | New `tests/zcode-device-visual-photos.test.mjs` (10 tests) with an in-memory filesystem; real policy code exercised throughout. |
+| No test that a valid persisted vector config renders with its stored config | P1 | Added to `zcode-device-visual-defaults.test.mjs` (air-fryer config asserted byte-deep through the render). |
+| Artwork-signature ignored `stopColor`/`stopOpacity`/text content | P2 | Signature extended; the pairwise-distinctness test is now palette- and text-aware. |
+| Hostile-config test was weaker than its name | P2 | Now feeds seven hostile-shaped configs through the renderer and asserts each renders exactly the safe `unknown` fallback tree. |
+| Bundled branch exercised only with `image:'lamp'` | P2 | Now asserted for all six bundled ids. |
+| Doc: hostile-config claim outran its test | P2 | Claim rewritten to describe the actual two-part coverage (rejection in `illustrations.test.mjs`, fallback-equality here). |
+| pc-fan head drifted 3 px from the approved geometry via shared `headY` | P3 | Fixed: hardware fans pin `headY=119`, restoring the approved pc-fan geometry byte-for-byte. |
+| Doc: "pc-fan/led art unchanged" imprecise (CH2 vector fallback intentionally changed) | P3 | Reworded to name the byte-identical primitives and the intentional led-strip change. |
+| Doc: node-count bound 15 measured 17 | P3 | Corrected to the measured bound with the largest form named. |
+| Harness: silent crash if a new hook appears; rewind assumes a single `useState`; dead `deviceVisualPath` parameter | P3 | Hook-guard throws added with explanatory message; one-hook assumption documented in the harness comment; dead parameter removed. |
+| Pre-existing dead conditional `smallDisplay(f === 2 ? 136 : 136, …)` | P3 | Left as-is (pre-existing code outside this mission's defect list; not worth diff noise). |
+| Reviewer-noted untestable-without-device gaps (app-restart JSON round-trip through model validation, channel rename) | P3 | Documented here as remaining manual QA items; rename feeds only `accessibilityLabel` (low risk). |
+
 ## Remaining limitations / honest statements
 
-- **No Android visual acceptance.** No emulator or device was used; all visual claims above are browser-preview or static-PNG evidence. Native pixel-ratio, 320 dp, rotation, font-scale and TalkBack behaviour of the changed illustrations remain unverified.
+- **No Android visual acceptance.** No emulator or device was used; all visual claims above are browser-preview or static-PNG evidence. Native pixel-ratio, 320 dp, rotation, font-scale and TalkBack behaviour of the changed illustrations remain unverified. Unautomated manual-QA items: app-restart round-trip of persisted appearance JSON through model validation, channel-rename rendering, real-picker permission-denied on device.
 - No Figma pixel-parity claim: Figma was used for metadata/structure only.
 - Perf claims are web-labeled; native measurements N/A.
 - `npm audit` was not re-baselined in this run; the four known advisories documented by the wave-1 integrator remain (no dependency changes here).
 - `lamp.png` (cutout) is currently unreferenced by `imageMap` (only `lamp-scene` is used); it is not bundled by Metro (never `require`d) — kept for future chooser use, not removed.
-- Commit authorship: all commits are authored in this worktree as the ZCode device-visuals agent; no history rewrites, no force push, PR opened as Draft against `integration/unified-v7-20261027` (not main).
+- Commit authorship: all commits are authored in this worktree as "ZCode Device Visuals Agent"; no history rewrites, no force push, PR opened as Draft against `integration/unified-v7-20261027` (not main). PR URL is recorded in the final commit message of this branch.
