@@ -15,6 +15,7 @@ import { theme, sty } from "../specwatt/theme";
 import { imageMap } from "../specwatt/images";
 import { t } from "../specwatt/i18n";
 import { useSpec } from "../specwatt/store";
+import { applyLocale, recallLocale } from "../specwatt/localization/locale-mirror";
 
 type Page = "welcome" | "locale" | "mode" | "login" | "register" | "recovery";
 export default function Onboarding() {
@@ -22,7 +23,7 @@ export default function Onboarding() {
   const insets = useSafeAreaInsets();
   const availableHeight = height - insets.top - insets.bottom;
   const welcomeImageHeight = Math.max(130, Math.min(220, availableHeight * 0.24));
-  const { data, ready, setLocale, enterDemo, setOnboarded } = useSpec();
+  const { data, ready, storageError, setLocale, enterDemo, setOnboarded } = useSpec();
   const [page, setPage] = useState<Page>("welcome");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,7 +35,16 @@ export default function Onboarding() {
     if (!ready || resumed.current) return;
     resumed.current = true;
     if (data.source === "demo" || data.onboarded) router.replace("/home");
-  }, [ready, data.source, data.onboarded]);
+    else if (storageError)
+      // The store could not read its state, so the chosen language may be
+      // lost; the mirror is the recovery source for exactly this case.
+      // Invariant: this only runs while the user is on onboarding, which
+      // holds because a failed read leaves emptyState (source "none",
+      // onboarded false). If emptyState defaults ever change, revisit this.
+      recallLocale().then((mirrored) => {
+        if (mirrored && mirrored !== locale) setLocale(mirrored);
+      });
+  }, [ready, data.source, data.onboarded, locale, setLocale, storageError]);
   function chooseDemo() {
     enterDemo();
     router.replace("/home");
@@ -45,38 +55,24 @@ export default function Onboarding() {
   };
   const submit = () => {
     if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setError(
-        locale === "ky"
-          ? "Туура электрондук почта киргизиңиз"
-          : "Введите корректный email",
-      );
+      setError(t(locale, "errEmail"));
       return;
     }
     if (page !== "recovery" && password.length < 8) {
-      setError(
-        locale === "ky"
-          ? "Сырсөз кеминде 8 белгиден турушу керек"
-          : "Не менее 8 символов в пароле",
-      );
+      setError(t(locale, "errPassword"));
       return;
     }
     if (page === "register" && password !== repeat) {
-      setError(
-        locale === "ky" ? "Сырсөздөр дал келбейт" : "Пароли не совпадают",
-      );
+      setError(t(locale, "errPasswordMatch"));
       return;
     }
-    setError(
-      locale === "ky"
-        ? "Сервер туташкан эмес. Эч нерсе жөнөтүлгөн жок."
-        : "Сервер не подключён. Данные не отправлялись.",
-    );
+    setError(t(locale, "errServerOffline"));
   };
-  const hint = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
+  const badges = [t(locale, "badgeLoad"), t(locale, "badgeProtect"), t(locale, "badgePlan")];
   if (!ready)
     return (
       <SafeAreaView style={sty.screen}>
-        <Copy>{hint("Загрузка…", "Жүктөлүүдө…")}</Copy>
+        <Copy>{t(locale, "loading")}</Copy>
       </SafeAreaView>
     );
   return (
@@ -97,7 +93,7 @@ export default function Onboarding() {
               </Copy>
             </Copy>
             <Copy size={12} muted>
-              {locale === "ky" ? "ОКУУ СТЕНДИ" : "УЧЕБНЫЙ СТЕНД"}
+              {t(locale, "standBadge")}
             </Copy>
           </View>
           {page === "welcome" && (
@@ -109,14 +105,11 @@ export default function Onboarding() {
                 />
               </Panel>
               <Copy size={32}>
-                {hint("Всё работает", "Баары иштейт")}{"\n"}
-                <Copy size={32} accent>{hint("в своё время.", "өз убагында.")}</Copy>
+                {t(locale, "welcomeTitle1")}{"\n"}
+                <Copy size={32} accent>{t(locale, "welcomeTitle2")}</Copy>
               </Copy>
               <Copy muted>
-                {hint(
-                  "Нагрузка, разрешения и безопасные решения для учебного стенда.",
-                  "Окуу стендиндеги жүктөм, уруксаттар жана коопсуз чечимдер.",
-                )}
+                {t(locale, "welcomeSubtitle")}
               </Copy>
               <View style={[sty.row, { gap: 10, marginVertical: 4 }]}>
                 {["◷", "⌁", "♢"].map((a, i) => (
@@ -127,13 +120,13 @@ export default function Onboarding() {
                     <Copy size={25} accent>
                       {a}
                     </Copy>
-                    <Copy size={12}>{["Нагрузка", "Защита", "План"][i]}</Copy>
+                    <Copy size={12}>{badges[i]}</Copy>
                   </View>
                 ))}
               </View>
               <CTA label={t(locale, "next")} onPress={() => go("locale")} />
               <CTA
-                label={hint("Войти (сервер недоступен)", "Кирүү (сервер жок)")}
+                label={t(locale, "loginUnavailable")}
                 secondary
                 onPress={() => go("login")}
               />
@@ -143,21 +136,22 @@ export default function Onboarding() {
             <>
               <Copy size={32}>{t(locale, "language")}</Copy>
               <Copy muted>
-                {hint(
-                  "Выбор языка сохранится на устройстве.",
-                  "Тил тандоо түзмөктө сакталат.",
-                )}
+                {t(locale, "languageNote")}
               </Copy>
               <View style={[sty.row, { gap: 13, marginVertical: 28 }]}>
                 {(["ru", "ky"] as const).map((code) => (
                   <Pressable
                     key={code}
-                    onPress={() => setLocale(code)}
+                    accessibilityRole="button"
+                    accessibilityLabel={code === "ru" ? t(locale, "langRu") : t(locale, "langKy")}
+                    accessibilityHint={t(locale, "langHint")}
+                    accessibilityState={{ selected: code === locale }}
+                    onPress={() => applyLocale(setLocale, code)}
                     style={[
                       sty.card,
                       {
                         width: "48%",
-                        height: 185,
+                        minHeight: 185,
                         justifyContent: "space-between",
                         backgroundColor:
                           code === locale ? theme.raised : theme.surface,
@@ -168,7 +162,7 @@ export default function Onboarding() {
                       {code.toUpperCase()}
                     </Copy>
                     <Copy size={17}>
-                      {code === "ru" ? "Русский" : "Кыргызча"}
+                      {code === "ru" ? t(locale, "langRu") : t(locale, "langKy")}
                     </Copy>
                     <Copy
                       size={13}
@@ -176,8 +170,8 @@ export default function Onboarding() {
                       muted={code !== locale}
                     >
                       {code === locale
-                        ? "✓ " + hint("Выбрано", "Тандалды")
-                        : hint("Выбрать", "Тандоо")}
+                        ? "✓ " + t(locale, "selected")
+                        : t(locale, "pick")}
                     </Copy>
                   </Pressable>
                 ))}
@@ -196,6 +190,8 @@ export default function Onboarding() {
               <Copy muted>{t(locale, "choose")}</Copy>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel={t(locale, "real")}
+                accessibilityHint={t(locale, "realSub")}
                 onPress={() => {
                   setOnboarded();
                   router.push("/setup");
@@ -203,7 +199,7 @@ export default function Onboarding() {
                 style={[
                   sty.card,
                   {
-                    height: 205,
+                    minHeight: 205,
                     marginTop: 20,
                     backgroundColor: theme.raised,
                     justifyContent: "space-between",
@@ -211,22 +207,21 @@ export default function Onboarding() {
                 ]}
               >
                 <Copy size={12} accent>
-                  01 / {hint("МОЁ ОБОРУДОВАНИЕ", "МЕНИН ЖАБДУУМ")}
+                  01 / {t(locale, "myEquipment")}
                 </Copy>
                 <Copy size={28}>{t(locale, "real")}</Copy>
                 <Copy muted>
-                  {hint(
-                    "Настройка каналов после подтверждения контроллера.",
-                    "Контроллер текшерилгенден кийин каналдарды жөндөө.",
-                  )}
+                  {t(locale, "realSub")}
                 </Copy>
               </Pressable>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel={t(locale, "demo")}
+                accessibilityHint={t(locale, "demoSub")}
                 onPress={chooseDemo}
                 style={[
                   sty.card,
-                  { height: 145, justifyContent: "space-between" },
+                  { minHeight: 145, justifyContent: "space-between" },
                 ]}
               >
                 <Copy size={12} accent>
@@ -234,10 +229,7 @@ export default function Onboarding() {
                 </Copy>
                 <Copy size={24}>{t(locale, "demo")}</Copy>
                 <Copy muted>
-                  {hint(
-                    "3 виртуальных канала · не физические измерения",
-                    "3 виртуалдык канал · чыныгы өлчөө эмес",
-                  )}
+                  {t(locale, "demoSub")}
                 </Copy>
               </Pressable>
               <CTA
@@ -249,14 +241,11 @@ export default function Onboarding() {
                 }}
               />
               <Copy muted size={12}>
-                {hint(
-                  "Нажмите одну из карточек. Общая кнопка не подменяет ваш выбор.",
-                  "Карточкалардын бирин тандаңыз. Режим автоматтык алмашпайт.",
-                )}
+                {t(locale, "modeHint")}
               </Copy>
               <CTA
                 secondary
-                label={hint("Вход / регистрация", "Кирүү / катталуу")}
+                label={t(locale, "authEntry")}
                 onPress={() => go("login")}
               />
             </>
@@ -265,10 +254,10 @@ export default function Onboarding() {
             <>
               <Copy size={31}>
                 {page === "login"
-                  ? hint("Вход", "Кирүү")
+                  ? t(locale, "loginTitle")
                   : page === "register"
-                    ? hint("Регистрация", "Катталуу")
-                    : hint("Восстановление", "Калыбына келтирүү")}
+                    ? t(locale, "registerTitle")
+                    : t(locale, "recoveryTitle")}
               </Copy>
               <Panel
                 style={{
@@ -281,20 +270,14 @@ export default function Onboarding() {
                   SERVER · OFFLINE
                 </Copy>
                 <Copy size={20}>
-                  {hint(
-                    "Сервер пока не подключён",
-                    "Сервер азырынча туташкан эмес",
-                  )}
+                  {t(locale, "serverOffline")}
                 </Copy>
                 <Copy muted>
-                  {hint(
-                    "Форма проверяет ввод, но не отправляет данные.",
-                    "Форма киргизүүнү текшерет, маалымат жөнөтпөйт.",
-                  )}
+                  {t(locale, "offlineNote")}
                 </Copy>
               </Panel>
               <Copy size={13} muted>
-                {hint("Электронная почта", "Электрондук почта")}
+                {t(locale, "email")}
               </Copy>
               <TextInput
                 value={email}
@@ -302,6 +285,7 @@ export default function Onboarding() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 autoComplete="email"
+                accessibilityLabel={t(locale, "email")}
                 style={sty.field}
                 placeholderTextColor={theme.dim}
                 placeholder="name@example.com"
@@ -309,13 +293,14 @@ export default function Onboarding() {
               {page !== "recovery" && (
                 <>
                   <Copy size={13} muted>
-                    {hint("Пароль", "Сырсөз")}
+                    {t(locale, "password")}
                   </Copy>
                   <TextInput
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
                     autoComplete="off"
+                    accessibilityLabel={t(locale, "password")}
                     style={sty.field}
                     placeholderTextColor={theme.dim}
                     placeholder="••••••••"
@@ -325,28 +310,29 @@ export default function Onboarding() {
               {page === "register" && (
                 <>
                   <Copy size={13} muted>
-                    {hint("Повторите пароль", "Сырсөздү кайталаңыз")}
+                    {t(locale, "passwordRepeat")}
                   </Copy>
                   <TextInput
                     value={repeat}
                     onChangeText={setRepeat}
                     secureTextEntry
+                    accessibilityLabel={t(locale, "passwordRepeat")}
                     style={sty.field}
                   />
                 </>
               )}
               {!!error && (
-                <Copy size={14} style={{ color: theme.error }}>
+                <Copy size={14} accessibilityLiveRegion="polite" style={{ color: theme.error }}>
                   {error}
                 </Copy>
               )}
               <CTA
                 label={
                   page === "login"
-                    ? hint("Войти", "Кирүү")
+                    ? t(locale, "loginTitle")
                     : page === "register"
-                      ? hint("Создать аккаунт", "Аккаунт түзүү")
-                      : hint("Запросить письмо", "Кат суроо")
+                      ? t(locale, "createAccount")
+                      : t(locale, "requestLetter")
                 }
                 onPress={submit}
               />
@@ -354,15 +340,15 @@ export default function Onboarding() {
                 secondary
                 label={
                   page === "login"
-                    ? hint("Создать аккаунт", "Аккаунт түзүү")
-                    : hint("Назад ко входу", "Кирүүгө кайтуу")
+                    ? t(locale, "createAccount")
+                    : t(locale, "backToLogin")
                 }
                 onPress={() => go(page === "login" ? "register" : "login")}
               />
               {page === "login" && (
                 <CTA
                   secondary
-                  label={hint("Забыли пароль?", "Сырсөздү унуттуңузбу?")}
+                  label={t(locale, "forgotPassword")}
                   onPress={() => go("recovery")}
                 />
               )}

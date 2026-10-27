@@ -11,14 +11,8 @@ import { Copy, CTA, Panel } from "../specwatt/ui";
 import { theme, sty } from "../specwatt/theme";
 import { useSpec, ChannelId, Assign } from "../specwatt/store";
 import { t } from "../specwatt/i18n";
+import { defaultDraft } from "../specwatt/localization/default-draft";
 type Step = "overview" | "channels" | "assign" | "done";
-const defaults: Assign = {
-  name: "",
-  category: "lamp",
-  image: "lamp",
-  room: "Гостиная",
-  allowAuto: false,
-};
 export default function Setup() {
   const { data, enterDemo, assign } = useSpec();
   const locale = data.locale;
@@ -28,18 +22,17 @@ export default function Setup() {
 
   const [step, setStep] = useState<Step>("overview");
   const [selected, setSelected] = useState<ChannelId>("CH1");
-  const [draft, setDraft] = useState<Assign>(defaults);
+  const [draft, setDraft] = useState<Assign>(() => defaultDraft(locale));
   const [error, setError] = useState("");
   useFocusEffect(useCallback(()=>{
    if(!params.channel||!['CH1','CH2','CH3'].includes(params.channel)||!params.illustration)return;
    const key=params.channel+params.illustration;if(consumed.current===key)return;consumed.current=key;
    try{const config=validateIllustrationConfig(JSON.parse(params.illustration));if(!config)return;const id=params.channel as ChannelId;setSelected(id);setDraft(d=>({...d,appearance:{kind:'vector',config}}));setStep('assign');}catch{}
   },[params.channel,params.illustration]));
-  const words = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
   function pickChannel(ch: ChannelId) {
     const channel = data.channels.find((c) => c.id === ch);
     setSelected(ch);
-    setDraft(channel?.assigned || { ...defaults, name: "" });
+    setDraft(channel?.assigned || defaultDraft(locale));
     setError("");
     setStep("assign");
   }
@@ -49,12 +42,7 @@ export default function Setup() {
       draft.name.length > 80 ||
       draft.room.length > 80
     ) {
-      setError(
-        words(
-          "Название обязательно; название и помещение — до 80 символов.",
-          "Ат милдеттүү; ат жана бөлмө 80 белгиден ашпасын.",
-        ),
-      );
+      setError(t(locale, "errName"));
       return;
     }
     assign(selected, { ...draft, name: draft.name.trim() });
@@ -65,7 +53,7 @@ export default function Setup() {
   async function choosePhoto(){
     setImporting(true);setError('');
     try{const uri=await importDevicePhoto();if(uri)setDraft(d=>({...d,appearance:{kind:'photo',uri}}));}
-    catch{setError(words('Не удалось импортировать фото. Выберите JPG/PNG до 15 МБ; импорт доступен на Android.','Сүрөт импорттолгон жок. 15 МБ чейин JPG/PNG тандаңыз; импорт Androidдо жеткиликтүү.'));}
+    catch{setError(t(locale,'errPhoto'));}
     finally{setImporting(false);}
   }
   return (
@@ -91,51 +79,39 @@ export default function Setup() {
         {step === "overview" && (
           <>
             <Copy size={31}>
-              {words("Подключение стенда", "Стендди туташтыруу")}
+              {t(locale, "setupTitle")}
             </Copy>
             <Panel style={{ backgroundColor: theme.raised, gap: 9 }}>
               <Copy size={12} accent>
-                5 В · НИЗКОВОЛЬТНЫЙ СТЕНД
+                {t(locale, "lowVoltageBadge")}
               </Copy>
               <Copy size={26}>
-                {words("Контроллер и каналы", "Контроллер жана каналдар")}
+                {t(locale, "controllerChannels")}
               </Copy>
               <Copy muted>
-                {words(
-                  "Реальное обнаружение ESP32/LAN ещё не подключено. Симуляция не управляет оборудованием.",
-                  "ESP32/LAN чыныгы издөө азырынча кошулган эмес. Симуляция жабдууну башкарбайт.",
-                )}
+                {t(locale, "discoveryNote")}
               </Copy>
             </Panel>
             <Copy size={16}>
-              {words("Что будет доступно", "Эмне жеткиликтүү болот")}
+              {t(locale, "whatAvailable")}
             </Copy>
             <View style={sty.card}>
               <Copy>CH1 / CH2</Copy>
               <Copy muted>
-                {words(
-                  "Назначение приборов и разрешений",
-                  "Түзмөктөрдү жана уруксаттарды дайындоо",
-                )}
+                {t(locale, "assignNote")}
               </Copy>
             </View>
             <View style={sty.card}>
               <Copy accent>CH3 · {t(locale, "protected")}</Copy>
               <Copy muted>
-                {words(
-                  "В учебной конфигурации ручное управление и автопилот запрещены.",
-                  "Окуу конфигурациясында кол менен жана автоматтык башкарууга тыюу салынат.",
-                )}
+                {t(locale, "ch3Note")}
               </Copy>
             </View>
             <CTA
               label={
                 data.source === "demo"
-                  ? words(
-                      "Настроить текущие каналы",
-                      "Учурдагы каналдарды жөндөө",
-                    )
-                  : words("Открыть учебную симуляцию", "Окуу симуляциясын ачуу")
+                  ? t(locale, "configureCurrent")
+                  : t(locale, "openSimulation")
               }
               onPress={() => {
                 if (data.source !== "demo") enterDemo();
@@ -144,7 +120,7 @@ export default function Setup() {
             />
             <CTA
               secondary
-              label={words("Без устройств", "Түзмөктөрсүз")}
+              label={t(locale, "empty")}
               onPress={() => router.replace("/home")}
             />
           </>
@@ -154,10 +130,7 @@ export default function Setup() {
             <Copy size={31}>{t(locale, "channels")}</Copy>
             <Copy muted>
               {t(locale, "simulation")} ·{" "}
-              {words(
-                "Три виртуальных канала, не реальный поиск LAN.",
-                "Үч виртуалдык канал, чыныгы LAN издөөсү эмес.",
-              )}
+              {t(locale, "virtualChannelsNote")}
             </Copy>
             {(["CH1", "CH2", "CH3"] as ChannelId[]).map((id) => {
               const ch = data.channels.find((c) => c.id === id),
@@ -167,6 +140,8 @@ export default function Setup() {
                   key={id}
                   onPress={() => pickChannel(id)}
                   accessibilityRole="button"
+                  accessibilityLabel={`${id} · ${value?.name || t(locale, "unassigned")}`}
+                  accessibilityHint={id === "CH3" ? t(locale, "protected") : t(locale, "assignTune")}
                   style={[
                     sty.card,
                     {
@@ -182,15 +157,12 @@ export default function Setup() {
                       {id}
                     </Copy>
                     <Copy size={17}>
-                      {value?.name || words("Не назначен", "Дайындалган эмес")}
+                      {value?.name || t(locale, "unassigned")}
                     </Copy>
                     <Copy muted>
                       {id === "CH3"
                         ? t(locale, "protected")
-                        : words(
-                            "Назначить и настроить",
-                            "Дайындоо жана жөндөө",
-                          )}
+                        : t(locale, "assignTune")}
                     </Copy>
                   </View>
                   <DeviceVisual assignment={value} id={id}
@@ -200,7 +172,7 @@ export default function Setup() {
               );
             })}
             <CTA
-              label={words("На главную", "Башкы бетке")}
+              label={t(locale, "toHome")}
               onPress={() => router.replace("/home")}
             />
           </>
@@ -215,73 +187,55 @@ export default function Setup() {
               <Copy size={23}>
                 {selected === "CH3"
                   ? t(locale, "protected")
-                  : words("Настроить прибор", "Түзмөктү жөндөө")}
+                  : t(locale, "configureDevice")}
               </Copy>
               <Copy muted>
                 {selected === "CH3"
-                  ? words(
-                      "Для CH3 можно назначить изображение и название, но переключение и автоматизация запрещены.",
-                      "CH3 үчүн ат жана сүрөт тандалат, башкарууга уруксат жок.",
-                    )
-                  : words(
-                      "Укажите только физически поддерживаемое устройство этого канала.",
-                      "Бул каналдын колдоосуна ылайык түзмөктү тандаңыз.",
-                    )}
+                  ? t(locale, "ch3AssignNote")
+                  : t(locale, "supportedDeviceNote")}
               </Copy>
             </Panel>
-            <Copy muted>{words("Название устройства", "Түзмөктүн аты")}</Copy>
+            <Copy muted>{t(locale, "deviceName")}</Copy>
             <TextInput
               maxLength={80}
-              accessibilityLabel={words("Название устройства", "Түзмөктүн аты")}
+              accessibilityLabel={t(locale, "deviceName")}
               value={draft.name}
               onChangeText={(name) => setDraft((d) => ({ ...d, name }))}
               style={sty.field}
               placeholderTextColor={theme.dim}
-              placeholder={words("Например: светильник", "Мисалы: чырак")}
+              placeholder={t(locale, "namePlaceholder")}
             />
             <Copy size={16}>
-              {words(
-                "Категория и готовые изображения",
-                "Категория жана даяр сүрөттөр",
-              )}
+              {t(locale, "categoryImages")}
             </Copy>
             <DeviceVisual assignment={draft} id={selected} scene style={{height:200,width:'100%',borderRadius:22}}/>
-            <CTA secondary label={words('Каталог SVG и конструктор','SVG каталогу жана конструктор')} onPress={()=>router.push({pathname:'/catalog',params:{channel:selected,illustration:JSON.stringify(draft.appearance?.kind==='vector'?draft.appearance.config:defaultDeviceConfig(selected,draft.image))}})}/>
-            <CTA secondary disabled={importing} label={importing?words('Импортируем…','Импорттолууда…'):words('Использовать свою фотографию','Өз сүрөтүмдү колдонуу')} onPress={choosePhoto}/>
-            <Copy muted size={12}>{words('Выбор иллюстрации не меняет возможности канала.','Сүрөт тандоо каналдын мүмкүнчүлүгүн өзгөртпөйт.')}</Copy>
+            <CTA secondary label={t(locale,'svgCatalog')} onPress={()=>router.push({pathname:'/catalog',params:{channel:selected,illustration:JSON.stringify(draft.appearance?.kind==='vector'?draft.appearance.config:defaultDeviceConfig(selected,draft.image))}})}/>
+            <CTA secondary disabled={importing} label={importing?t(locale,'importing'):t(locale,'useOwnPhoto')} onPress={choosePhoto}/>
+            <Copy muted size={12}>{t(locale,'illustrationNote')}</Copy>
             <Copy size={15}>{t(locale, "room")}</Copy>
             <TextInput
               maxLength={80}
-              accessibilityLabel={words("Помещение", "Бөлмө")}
+              accessibilityLabel={t(locale, "room")}
               style={sty.field}
               value={draft.room}
               onChangeText={(room) => setDraft((d) => ({ ...d, room }))}
-              placeholder={words("Например: кабинет", "Мисалы: кабинет")}
+              placeholder={t(locale, "roomPlaceholder")}
               placeholderTextColor={theme.dim}
             />
             <Panel style={{ gap: 10 }}>
               <View style={[sty.row, { justifyContent: "space-between" }]}>
                 <View style={{ flex: 1, gap: 6 }}>
                   <Copy size={17}>
-                    {words("Разрешить автопилот", "Автопилотко уруксат")}
+                    {t(locale, "allowAuto")}
                   </Copy>
                   <Copy size={12} muted>
                     {selected === "CH3"
-                      ? words(
-                          "CH3 защищён · нельзя включить",
-                          "CH3 корголгон · уруксат жок",
-                        )
-                      : words(
-                          "Только после явного согласия",
-                          "Ачык макулдуктан кийин гана",
-                        )}
+                      ? t(locale, "ch3Blocked")
+                      : t(locale, "consentNote")}
                   </Copy>
                 </View>
                 <Toggle
-                  label={words(
-                    "Разрешить автопилот",
-                    "Автопилотко уруксат",
-                  )}
+                  label={t(locale, "allowAuto")}
                   value={selected !== "CH3" && draft.allowAuto}
                   disabled={selected === "CH3"}
                   onChange={(value) =>
@@ -291,7 +245,7 @@ export default function Setup() {
               </View>
             </Panel>
             {!!error && (
-              <Copy size={13} style={{ color: theme.error }}>
+              <Copy size={13} accessibilityLiveRegion="polite" style={{ color: theme.error }}>
                 {error}
               </Copy>
             )}
@@ -311,23 +265,16 @@ export default function Setup() {
                 {draft.room || "—"} ·{" "}
                 {selected === "CH3"
                   ? t(locale, "protected")
-                  : words(
-                      draft.allowAuto
-                        ? "Автопилот разрешён"
-                        : "Автопилот не разрешён",
-                      draft.allowAuto
-                        ? "Автопилотко уруксат бар"
-                        : "Автопилотко уруксат жок",
-                    )}
+                  : t(locale, draft.allowAuto ? "autoAllowed" : "autoDenied")}
               </Copy>
             </Panel>
             <CTA
-              label={words("Другой канал", "Башка канал")}
+              label={t(locale, "anotherChannel")}
               onPress={() => setStep("channels")}
             />
             <CTA
               secondary
-              label={words("К устройствам", "Түзмөктөргө")}
+              label={t(locale, "toDevices")}
               onPress={() => router.replace("/devices")}
             />
           </>
