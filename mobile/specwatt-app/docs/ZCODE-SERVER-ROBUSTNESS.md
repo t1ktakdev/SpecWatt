@@ -171,7 +171,7 @@ All commits authored as `ZCode Mobile Server Resilience Agent <zcode-mobile-serv
 - `020630c` feat(mobile): scope 401 invalidation to the rejected token and add safe-GET recovery — `src/specwatt/{api.ts,server-request-scope.ts,scheduler-api.ts}`, `tests/{zcode-server-resilience.test.mjs,api.test.mjs}`
 - `892c2d1` feat(mobile): cancel local server queries and pin stale-response commits in the server workspace — `src/screens/{server.tsx,server-schedules.tsx}`
 - `72b953b` test(mobile): end-to-end loopback FastAPI contract coverage for server resilience — `tests/zcode-server-e2e.test.mjs`
-- `576a50d` fix(mobile): use the allowlisted security-suite fixture credential in the loopback e2e — `tests/zcode-server-e2e.test.mjs` (CI secret-scan follow-up, see §11.3)
+- `c0f5387` fix(mobile): use the allowlisted security-suite fixture credential in the loopback e2e — `tests/zcode-server-e2e.test.mjs` plus the §11.3 CI-finding documentation (CI secret-scan follow-up)
 - This handoff document itself (final commit on the branch; its SHA necessarily changes when this list is updated).
 
 HEAD after these commits: see `git rev-parse zcode/max-mobile-server`; every commit passed `git diff --cached --check` and the secret scan before being created.
