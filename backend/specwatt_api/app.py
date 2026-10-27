@@ -330,7 +330,12 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         with connect(path) as db:
             row = db.execute('SELECT id,password_hash FROM users WHERE email=?', (payload.email,)).fetchone()
             stored = row['password_hash'] if row else dummy_hash
-            candidate = password_hash(payload.password, stored.split('$')[4])
+            try:
+                candidate = password_hash(payload.password, stored.split('$')[4])
+            except (IndexError, ValueError):
+                # A corrupted verifier cannot match any password; answer like a
+                # failed login instead of crashing with 500 on damaged state.
+                raise HTTPException(401, detail={'code': 'invalid_credentials'}) from None
             if not hmac.compare_digest(candidate, stored) or row is None:
                 raise HTTPException(401, detail={'code': 'invalid_credentials'})
             return issue_session(db, row['id'])

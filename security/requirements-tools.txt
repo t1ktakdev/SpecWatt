@@ -1,0 +1,9 @@
+# Tooling for the security/ suite and CI security gates.
+# The unittest suite itself runs on the standard library plus
+# backend/requirements-dev.txt; hypothesis adds property-based testing.
+-r ../backend/requirements-dev.txt
+hypothesis==6.170.12
+
+# Separate audit tools (CI installs these for their own jobs):
+#   bandit==1.9.4
+#   pip-audit==2.10.1

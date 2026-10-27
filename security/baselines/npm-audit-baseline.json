@@ -1,0 +1,52 @@
+{
+  "comment": [
+    "Reviewed baseline of accepted npm audit advisories.",
+    "Regenerate with: python security/check_npm_audit.py",
+    "<audit.json> --update  — every entry needs a documented",
+    "rationale in security/docs/findings.md."
+  ],
+  "known": {
+    "@expo/cli": {
+      "severity": "high",
+      "range": "<=0.0.0-canary-20231123-1b19f96-4 || >=0.0.1-canary-20231125-d600e44",
+      "titles": [
+        "range:@expo/code-signing-certificates",
+        "range:node-forge",
+        "range:zod"
+      ],
+      "fix_available": true
+    },
+    "@expo/code-signing-certificates": {
+      "severity": "high",
+      "range": "*",
+      "titles": [
+        "range:node-forge"
+      ],
+      "fix_available": true
+    },
+    "expo": {
+      "severity": "high",
+      "range": ">=45.0.0-beta.1",
+      "titles": [
+        "range:@expo/cli"
+      ],
+      "fix_available": true
+    },
+    "node-forge": {
+      "severity": "high",
+      "range": "*",
+      "titles": [
+        "node-forge RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements"
+      ],
+      "fix_available": true
+    },
+    "zod": {
+      "severity": "high",
+      "range": "<4.6.6",
+      "titles": [
+        "Zod can exhaust memory while validating oversized constrained collections"
+      ],
+      "fix_available": true
+    }
+  }
+}
