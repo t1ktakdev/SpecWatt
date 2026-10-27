@@ -411,6 +411,21 @@ class SchedulerFaultTests(unittest.TestCase):
         with patch('specwatt_api.scheduler.worker.run_worker_pass', side_effect=slow_pass):
             asyncio.run(scenario())
 
+    def test_concurrent_worker_passes_insert_one_phase(self):
+        # Two app processes polling the same database (the documented worker
+        # contract): BEGIN IMMEDIATE serializes them, the stable phase key
+        # guarantees one command record per phase.
+        from concurrent.futures import ThreadPoolExecutor
+        from specwatt_api.scheduler.worker import run_worker_pass
+        created = self.schedule(duration=1800)
+        self.advance(60)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _: run_worker_pass(str(self.db), self.clock), range(4)))
+        commands = self.scheduler_commands()
+        self.assertEqual(len(commands), 1)
+        self.assertEqual(commands[0]['status'], 'requested')
+        self.assertEqual(self.schedule_row(created['id'])['schedule']['status'], 'running')
+
     def test_staggered_windows_complete_exactly_once(self):
         windows = [self.schedule(start_offset=60 * i, duration=60) for i in range(6)]
         for _ in range(8):
