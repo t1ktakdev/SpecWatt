@@ -7,7 +7,7 @@ import {devicePhotoExists} from './photos';
 import {validateAppearance} from './appearance-policy';
 import {imageMap,ImageId} from './images';
 export function defaultDeviceConfig(id?:ChannelId,image?:string){
- const category=image==='charger'?'phone-charger':image==='socket'?'smart-socket':id==='CH2'||image==='led-strip'?'led-strip':id==='CH3'||image==='fan'?'pc-fan':image==='appliance'?'unknown':'mushroom-lamp';
+ const category=image==='charger'?'phone-charger':image==='socket'?'smart-socket':id==='CH2'||image==='led-strip'?'led-strip':id==='CH3'||image==='fan'?'pc-fan':image==='appliance'?'kettle':'mushroom-lamp';
  return defaultIllustration(category);
 }
 export function DeviceVisual({assignment,id,style,scene=false}:{assignment?:Assign|null;id?:ChannelId;style?:StyleProp<ViewStyle>;scene?:boolean}){
