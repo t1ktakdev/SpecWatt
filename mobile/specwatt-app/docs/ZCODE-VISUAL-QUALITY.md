@@ -46,7 +46,7 @@ Worktree: `C:\Users\user\Documents\ChatGPT\SpecWATT-agent-worktrees\zcode-max-de
 | `npm run lint` (baseline) | exit 0 |
 | `node --test tests/zcode-device-visual-forms.test.mjs` (RED, before fix) | 3 pass / 2 fail with 32 identical-pair findings + ultrawide width 238=238 |
 | `node --test tests/zcode-device-visual-defaults.test.mjs` (RED, one-line revert of `appliance` mapping) | 5 pass / 1 fail (`expected 'kettle', got 'unknown'`) |
-| `npm test` (after fixes, review fixes and the night-watchdog round) | **138 pass / 0 fail, exit 0** (114 pre-existing + 24 new across three files; no pre-existing test modified) |
+| `npm test` (after fixes, review fixes and both night-watchdog rounds) | **145 pass / 0 fail, exit 0** (114 pre-existing + 31 new across three files; no pre-existing test modified) |
 | `npm run typecheck` (after fixes) | exit 0 |
 | `npm run lint` (after fixes) | exit 0 |
 | `python security/scan_secrets.py` (repo root) | `SECRET SCAN: clean (tracked worktree files)`, exit 0 |
@@ -106,7 +106,7 @@ All evidence in this run is **browser preview or static PNG inspection — none 
 ```
 
    This is safe with the current contract: `DeviceVisual` already renders the bundled photo when `appearance` is absent, `validateAppearance(undefined)` returns null, and `pruneDevicePhotos` (called on save) then reclaims the orphaned JPEG.
-2. **`src/app/setup.tsx` — photo import error message.** `choosePhoto()` catches every `PhotoError` code (busy/too-large/unsupported/…) into the single generic `errPhoto` string. The error codes exist in `photo-policy.ts`; mapping `e.code` to distinct dictionary keys would make "file too large" vs "permission denied" distinguishable. Proposed but not applied (dictionary files are outside this mission's file list).
+2. **`src/app/setup.tsx` — photo import error message.** `choosePhoto()` catches every `PhotoError` code (busy/too-large/unsupported/read-failed/write-failed/…) into the single generic `errPhoto` string. The error codes exist in `photo-policy.ts` and are now stage-accurate end to end; mapping `e.code` to distinct dictionary keys would make "file too large" vs "storage full (write)" distinguishable for the user. Proposed but not applied (dictionary files are outside this mission's file list).
 3. **`src/app/index.tsx`** — onboarding hero photo sizing (known visual-QA issue) needs its owner's review; the bundled asset is fine.
 
 ## Night-watchdog round (2026-10-28, post PR #7): bundled image failure fallback
@@ -125,6 +125,26 @@ Exact renders (same harness, assignment `{image:'appliance'}`):
 Fix (`src/specwatt/device-visual.tsx`): the single state slot now tracks the **failed source identity** (custom-photo URI or bundled asset number) instead of only a failed photo URI; `onError` records whichever source was rendered. A failed source stops being mounted immediately (no per-render retry) while every other source — a different bundled asset, a new custom photo — still renders normally; re-selecting a previously failed source retries it exactly once, matching the pre-existing custom-photo semantics. Photo-first behavior for healthy bundled assets, the custom photo ownership/URI policy, scene backdrop, sizes and accessibility labels are unchanged; no new URI schemes; still a single `useState` slot (the documented harness assumption holds).
 
 Regression coverage added to `tests/zcode-device-visual-defaults.test.mjs` (3 tests): bundled decode failure degrades to the correct vector for **all seven `imageMap` ids** and is never re-mounted on subsequent renders; the source-switching sequence (appliance→fan→appliance→socket) with stale-failure isolation and one bounded retry; scene mode keeps the backdrop, vector and accessibility label after a bundled failure. The three new tests failed on the pre-fix head (`pass 8 / fail 3`) and pass after the fix; the pre-existing custom-photo `onError` and photo→vector tests are untouched and green.
+
+## Night-watchdog round 2 (photo IO): stage-accurate write-error classification
+
+The coordinator's second night review (head `72db762d328c5b2ec02fb0d88f6246498eff0abd`) found via the same native-boundary harness that a real native failure during the destination write (ENOSPC/EACCES in `Directory.create` or `File.copy`) escaped the outer catch and was mislabeled `photo-read-failed`, although the source had already been read and decoded; the intended `photo-write-failed` existed only on explicit validation gates. Their reproducer (`evidence/B/repro-native-write-error.mjs`, FakeFile.copy landing a partial destination then throwing ENOSPC) returned `{code:'photo-read-failed', sourcePreserved:true, partialOwned:0}` with exit 1 on that head.
+
+Fix (`src/specwatt/photos.ts`): the section from `rendered.saveAsync` (output production) through the final owned-file verification is wrapped in an inner stage-boundary try/catch — typed `PhotoError`s rethrow unchanged, untyped native failures become `PhotoError("photo-write-failed")`. The outer catch keeps the read/decode-stage classification (picker, source stat, `renderAsync` decode → `photo-read-failed`). No native message or user URI ever enters an error message (`PhotoError` messages are the bare code string). Destination cleanup, manipulator-cache cleanup, `release()` calls and the busy-flag reset all live outside the new boundary and behave exactly as before; the prune contract was not touched.
+
+Failure-lifecycle coverage (fault seams added to the existing harness only; no new dependencies):
+
+| Scenario | Classification | Behavior verified |
+| --- | --- | --- |
+| source stat/exists failure | `photo-read-failed` (already correct; guarded) | picker original preserved |
+| decoder `renderAsync` failure | `photo-read-failed` (already correct; guarded) | no owned dir, context released |
+| `saveAsync` encode/write failure | `photo-write-failed` (was mislabeled — RED) | no owned dir created |
+| `Directory.create` ENOSPC/EACCES | `photo-write-failed` (was mislabeled — RED) | no half-created dir, contexts released |
+| `File.copy` ENOSPC with partial destination | `photo-write-failed` (was mislabeled — RED) | partial file cleaned, picker original preserved, cache cleaned, both contexts released |
+| cleanup (`delete`) failing during that error path | original typed error wins, no native text leaks | honestly leaves the one partial file, touches nothing else |
+| any failure | busy flag released | immediate next import succeeds |
+
+Red/green: the four misclassification tests failed on the pre-fix head (11 pass / 4 fail), pass after the fix; the coordinator reproducer returns `{code:'photo-write-failed', sourcePreserved:true, partialOwned:0}` exit 0. Mock fault injection only — no physical native QA claimed.
 
 ## Code review (two independent read-only reviewers, main agent dispositions)
 

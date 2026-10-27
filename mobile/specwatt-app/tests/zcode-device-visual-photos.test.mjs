@@ -14,6 +14,9 @@ function loadPhotos(os = "android") {
   let savedPhotoSize = 800_000;
   let pickerOutcome = { canceled: true, assets: [] };
   const released = { render: 0, context: 0 };
+  // Injected native-failure seams (per test, cleared by reset): each holds a
+  // factory for the error the fake native layer throws, or null.
+  const faults = { copy: null, create: null, save: null, render: null, del: null };
 
   class FakeFile {
     constructor(a, b) {
@@ -30,9 +33,16 @@ function loadPhotos(os = "android") {
       return entry ? entry.size : 0;
     }
     async copy(destination) {
+      if (faults.copy) {
+        // A partial destination lands before the native failure, exactly like
+        // a real interrupted copy.
+        files.set(destination.uri, { size: 512 });
+        throw faults.copy();
+      }
       files.set(destination.uri, { size: files.get(this.uri).size });
     }
     delete() {
+      if (faults.del) throw faults.del();
       files.delete(this.uri);
     }
   }
@@ -45,6 +55,7 @@ function loadPhotos(os = "android") {
       return dirs.has(this.uri);
     }
     create() {
+      if (faults.create) throw faults.create();
       dirs.add(this.uri);
     }
     list() {
@@ -71,10 +82,12 @@ function loadPhotos(os = "android") {
       return {
         resize() {},
         async renderAsync() {
+          if (faults.render) throw faults.render();
           return {
             width: 1024,
             height: 768,
             saveAsync: async () => {
+              if (faults.save) throw faults.save();
               const uri = `${Paths.cache.uri}/ImageManipulator/out-${manipulatorContexts}.jpg`;
               files.set(uri, { size: savedPhotoSize });
               return { uri };
@@ -140,6 +153,7 @@ function loadPhotos(os = "android") {
     dirs.clear();
     permissionTrap = null;
     pickerOutcome = { canceled: true, assets: [] };
+    for (const key of Object.keys(faults)) faults[key] = null;
   };
   return {
     exports,
@@ -147,6 +161,7 @@ function loadPhotos(os = "android") {
     files,
     dirs,
     released,
+    faults,
     pickerAsset,
     seedOwned,
     reset,
@@ -295,4 +310,129 @@ test("on web the photo module never touches the filesystem", async () => {
     ![...h.files.keys()].some((key) => key.includes("ImagePicker")),
     "the picker must not even be reached on web",
   );
+});
+
+// Lifecycle helper: a picker asset fully prepared up to the injected fault.
+function beginImport(h) {
+  h.reset();
+  const input = h.pickerAsset();
+  h.files.set(input.uri, { size: 2_000_000 });
+  h.setPicker({ canceled: false, assets: [input] });
+  return input;
+}
+
+test("a native copy failure is photo-write-failed, cleans the partial file and preserves the source", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.copy = () => new Error("ENOSPC: no space left on device");
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-write-failed", "copy is a destination write, not a read");
+  assert.equal(failure?.message, "photo-write-failed", "native error text must never leak");
+  assert.ok(h.files.has(input.uri), "the picker original is never deleted");
+  assert.equal(
+    [...h.files.keys()].filter((key) => key.startsWith(h.ownedDir)).length,
+    0,
+    "the partial destination must be cleaned up",
+  );
+  assert.ok(
+    ![...h.files.keys()].some((key) => key.includes("ImageManipulator")),
+    "manipulator cache is still cleaned after the failure",
+  );
+  assert.equal(h.released.render, 1);
+  assert.equal(h.released.context, 1);
+});
+
+test("owned directory creation failure is photo-write-failed without any destination", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.create = () => new Error("EACCES: mkdir failed");
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-write-failed");
+  assert.equal(failure?.message, "photo-write-failed");
+  assert.ok(h.files.has(input.uri), "the picker original survives");
+  assert.equal(h.dirs.size, 0, "no owned directory is left half-created");
+  assert.equal(h.released.context, 1, "native contexts are released on this path too");
+});
+
+test("a decoder render failure stays photo-read-failed and never reaches the destination", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.render = () => new Error("decoder failure");
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-read-failed", "decode is the read/decode stage");
+  assert.equal(failure?.message, "photo-read-failed");
+  assert.ok(h.files.has(input.uri), "the picker original survives the decode failure");
+  assert.equal(h.dirs.size, 0, "no owned directory is created for an undecodable image");
+  assert.equal(h.released.context, 1, "the manipulator context is released");
+});
+
+test("a manipulator save failure is photo-write-failed before any owned write", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.save = () => new Error("ENOSPC while encoding");
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-write-failed", "encoding/writing the output is a write stage");
+  assert.ok(h.files.has(input.uri), "the picker original survives");
+  assert.equal(h.dirs.size, 0, "the owned directory is not even created");
+});
+
+test("a source read failure stays photo-read-failed", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.trap(input.uri);
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-read-failed", "stat/read of the source is the read stage");
+  assert.ok(h.files.has(input.uri), "the picker original is never deleted on read failure");
+});
+
+test("cleanup failures never mask the original typed error", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.copy = () => new Error("ENOSPC: no space left on device");
+  h.faults.del = () => new Error("EACCES: unlink failed");
+  const failure = await h.exports.importDevicePhoto().then(
+    () => null,
+    (error) => error,
+  );
+  assert.equal(failure?.code, "photo-write-failed", "the stage-accurate error must win over cleanup noise");
+  assert.equal(failure?.message, "photo-write-failed", "no native text leaks through cleanup failures");
+  // Cleanup failed, so the partial file honestly remains — but nothing else
+  // was touched: the picker original and the foreign cache are intact.
+  assert.ok(h.files.has(input.uri));
+  assert.equal(
+    [...h.files.keys()].filter((key) => key.startsWith(h.ownedDir)).length,
+    1,
+    "only the failed destination delete is blocked by the cleanup fault",
+  );
+});
+
+test("a failed import releases the busy flag: the next import succeeds", async () => {
+  const h = loadPhotos();
+  const input = beginImport(h);
+  h.faults.copy = () => new Error("ENOSPC: no space left on device");
+  await h.exports.importDevicePhoto().then(
+    () => null,
+    () => null,
+  );
+  // Same session, faults cleared: the importer must not be stuck photo-busy.
+  h.faults.copy = null;
+  h.setPicker({ canceled: false, assets: [input] });
+  const uri = await h.exports.importDevicePhoto();
+  assert.match(uri, /specwatt-photos\/photo-/);
+  assert.ok(h.files.get(uri), "the retry lands a real owned file");
 });
