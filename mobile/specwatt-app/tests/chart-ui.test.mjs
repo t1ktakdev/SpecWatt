@@ -7,7 +7,7 @@ import {chartScale,chartValue} from '../src/specwatt/chart-layout.ts';
 import {demoState} from '../src/specwatt/model.ts';
 import {createDemoHistory,integratePower} from '../src/specwatt/energy.ts';
 
-function harness(fontScale) {
+function harness(fontScale, locale='ru') {
  const exports={};
  const mocks={
   react:{createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:x=>[x,()=>{}],useMemo:fn=>fn()},
@@ -16,7 +16,7 @@ function harness(fontScale) {
   'expo-router':{usePathname:()=>'/devices'},'expo-linear-gradient':{},
   'react-native-svg':{default:'Svg',__esModule:true,Path:'Path',Circle:'Circle',Line:'Line',Text:'SvgLabel'},
   './motion':{ChartBar:'Bar'},'./motion-tokens':{},'./ui':{Copy:'Copy'},
-  './theme':{theme:{r:{card:20}}},'./store':{useSpec:()=>({data:demoState()})},
+  './theme':{theme:{r:{card:20}}},'./store':{useSpec:()=>({data:demoState(locale)})},
   './chart-layout':{chartScale,chartValue},'./energy':{createDemoHistory,integratePower},
  };
  const code=ts.transpileModule(fs.readFileSync(new URL('../src/specwatt/mobile-ui.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText;
@@ -24,7 +24,7 @@ function harness(fontScale) {
  const flatten=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(flatten):[n,...flatten(n.props?.children)];
  return {exports,flatten};
 }
-for(const scale of [1,1.5,2]) {
+for(const scale of [1,1.3,1.5,2]) {
  test(`both charts scale labels and scroll extent at fontScale ${scale}`,()=>{
   const {exports,flatten}=harness(scale);
   for(const tree of [exports.HistoryChart(),exports.ComparisonChart({before:[0,null,27,4],after:[0,7,13,4],labels:['14:00','14:30','15:00','15:30']})]) {
@@ -40,6 +40,16 @@ for(const scale of [1,1.5,2]) {
   }
  });
 }
+
+test('fixed demo history never claims to be measurements from today in either locale',()=>{
+ for(const locale of ['ru','ky']) {
+  const {exports,flatten}=harness(1,locale);
+  const copies=flatten(exports.HistoryChart()).filter(n=>n.type==='Copy');
+  const text=copies.map(n=>n.props.children.flat().join('')).join(' ');
+  assert.doesNotMatch(text,/сегодня|бүгүнкү/i);
+  assert.match(text,/демо/i);
+ }
+});
 test('narrow navigation has readable short labels; large text gets one full-width selected label',()=>{
  for(const scale of [1,1.5,2]) {
   const {exports,flatten}=harness(scale);

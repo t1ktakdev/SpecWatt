@@ -19,7 +19,8 @@ import { applyLocale } from "../specwatt/localization/locale-mirror";
 
 type Page = "welcome" | "locale" | "mode" | "login" | "register" | "recovery";
 export default function Onboarding() {
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  const welcomeTitleSize = width < 360 ? 28 : 32;
   const insets = useSafeAreaInsets();
   const availableHeight = height - insets.top - insets.bottom;
   const welcomeImageHeight = Math.max(130, Math.min(184, availableHeight * 0.22));
@@ -95,9 +96,9 @@ export default function Onboarding() {
                   style={{ width: "100%", height: welcomeImageHeight }}
                 />
               </Panel>
-              <Copy size={32}>
+              <Copy size={welcomeTitleSize}>
                 {t(locale, "welcomeTitle1")}{"\n"}
-                <Copy size={32} accent>{t(locale, "welcomeTitle2")}</Copy>
+                <Copy size={welcomeTitleSize} accent>{t(locale, "welcomeTitle2")}</Copy>
               </Copy>
               <Copy muted>
                 {t(locale, "welcomeSubtitle")}

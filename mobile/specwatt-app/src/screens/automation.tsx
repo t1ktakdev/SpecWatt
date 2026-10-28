@@ -88,6 +88,8 @@ function useNow() {
 }
 export function AutopilotScreen() {
   const { data, setAutopilot } = useSpec();
+  const {width,fontScale}=useWindowDimensions();
+  const stacked=width<360||fontScale>1.2;
   const w = useWords();
   const now = useNow();
   const plan = getPlan(data, now);
@@ -110,7 +112,7 @@ export function AutopilotScreen() {
       ) : (
         <>
           <Card style={{gap:16}}>
-            <View style={{flexDirection:'row',gap:16,alignItems:'center'}}>
+            <View style={{flexDirection:stacked?'column':'row',gap:16,alignItems:stacked?'stretch':'center'}}>
               <View style={{flex:1,gap:6}}>
                 <Copy size={13} muted>{w("Состояние автопилота","Автопилоттун абалы")}</Copy>
                 <Copy size={30} accent={data.autopilot}>{data.autopilot?w("Включён","Күйүк"):w("Выключен","Өчүк")}</Copy>
