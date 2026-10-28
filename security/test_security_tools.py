@@ -43,6 +43,32 @@ class SecretScannerTests(unittest.TestCase):
         synthetic = ''.join(('pass', 'word=')) + chr(34) + 'correct-horse-battery-UNREVIEWED' + chr(34)
         self.assertTrue(scanner.scan_text(synthetic, 'synthetic'))
 
+    def test_historical_e2e_exception_is_exact_and_never_weakens_current_scan(self):
+        import hashlib
+        import subprocess
+        repo = Path(__file__).resolve().parents[1]
+        path = scanner.HISTORICAL_FIXTURE_PATH
+        matching_line = None
+        for commit in scanner.HISTORICAL_FIXTURE_COMMITS:
+            source = subprocess.check_output(
+                ["git", "show", commit + ":" + path], cwd=repo,
+                text=True, encoding="utf-8",
+            )
+            line = source.splitlines()[18]
+            self.assertEqual(
+                hashlib.sha256(line.encode()).hexdigest(),
+                scanner.HISTORICAL_FIXTURE_SHA256,
+            )
+            self.assertTrue(scanner.scan_text(line, "current tree"), "a new occurrence remains reportable")
+            self.assertTrue(scanner.audited_historical_fixture("generic-assignment", commit, path, "19", line))
+            self.assertFalse(scanner.audited_historical_fixture("jwt", commit, path, "19", line))
+            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, path, "20", line))
+            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", "other-commit", path, "19", line))
+            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, "other-path", "19", line))
+            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, path, "19", line + " "))
+            matching_line = line
+        self.assertIsNotNone(matching_line)
+
     def test_output_does_not_reveal_any_matched_characters(self):
         self.assertEqual(scanner.mask('synthetic-sensitive-value'), '[REDACTED]')
 

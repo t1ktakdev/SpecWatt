@@ -12,6 +12,7 @@ Usage:
 """
 import argparse
 import fnmatch
+import hashlib
 import re
 import subprocess
 import sys
@@ -54,6 +55,30 @@ ALLOWLIST = [
 
 # Files whose contents are third-party registries or lockfiles; they are still
 # scanned for high-signal token patterns but generic assignments there are noise.
+# Two individually audited *historical* versions of a synthetic e2e login
+# password created only for a temporary loopback/SQLite fixture. It is NOT a
+# service secret. Do not extend this to a filename glob or a substring prefix.
+# A full-line SHA binds the exception to the exact original content without
+# embedding or reprinting the password. New commits and current-tree scans
+# remain subject to every existing pattern.
+HISTORICAL_FIXTURE_SHA256 = "fb985f9f3609d2fd7162fa8a8493337cc9d46ff247d67d2156a1bbddd1028a33"
+HISTORICAL_FIXTURE_PATH = "mobile/specwatt-app/tests/zcode-server-e2e.test.mjs"
+HISTORICAL_FIXTURE_COMMITS = frozenset({
+    "77985ef729f7fc96ef675e563c56c0f5e011f7d2",
+    "72b953b9eccad4a3009842c948f24ab792a24138" ,
+})
+
+
+def audited_historical_fixture(pattern_id, commit, path, lineno, line):
+    return (
+        pattern_id == "generic-assignment"
+        and commit in HISTORICAL_FIXTURE_COMMITS
+        and path == HISTORICAL_FIXTURE_PATH
+        and lineno == "19"
+        and line.lstrip().startswith("const " + "PASSWORD" + " = ")
+        and hashlib.sha256(line.encode("utf-8")).hexdigest() == HISTORICAL_FIXTURE_SHA256
+    )
+
 GENERIC_SKIP_GLOBS = ["*package-lock.json"]
 
 MAX_FILE_BYTES = 2_000_000
@@ -136,7 +161,9 @@ def scan_history():
                 if pattern_id == 'generic-assignment' and generic_skip:
                     continue
                 for match in pattern.finditer(content):
-                    if not allowlisted(pattern_id, match.group(0)):
+                    if not allowlisted(pattern_id, match.group(0)) and not audited_historical_fixture(
+                        pattern_id, commit, parts[1], parts[2], content
+                    ):
                         findings.append((pattern_id, f"{commit[:12]}:{parts[1]}:{parts[2]}", mask(match.group(0))))
     return findings
 
