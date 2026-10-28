@@ -189,10 +189,11 @@ const nav = [
   ["/journal", "journal", "Журнал", "Журнал"],
 ] as const;
 function BottomNav({ active }: { active?: string }) {
+  const {width}=useWindowDimensions();
   const path = usePathname(),
     w = useWords();
   return (
-    <View style={s.nav}>
+    <View style={[s.nav,{width:Math.min(width,440)-(width<360?32:40)}]}>
       {nav.map(([href, icon, ru, ky]) => {
         const selected = (active || path) === href;
         return (
@@ -367,7 +368,7 @@ export function Gauge({value,label,subtitle,bolt=false,power,limit=7}:{value:str
  const end=ratio??0;
  const x=170-142*Math.cos(Math.PI*end),y=153-142*Math.sin(Math.PI*end);
  return <View style={{minHeight:220*fontScale,justifyContent:'flex-end',alignItems:'center',paddingTop:72,paddingBottom:12,gap:4}}>
-  <Svg width="100%" height={Math.min(width-40,360)*.56} viewBox="0 0 340 180" style={{position:'absolute',top:0}} accessible={false}>
+  <Svg width="100%" height={Math.min(width-40,360)*.56} viewBox="0 0 340 180" style={{position:'absolute',top:0}}>
    <Path d="M28 153 A142 142 0 0 1 312 153" stroke={theme.line} strokeWidth={11} strokeLinecap="round" fill="none"/>
    {end>0&&<TracePath d={`M28 153 A142 142 0 0 1 ${x} ${y}`} progress={1} length={end*446.2} stroke={theme.peach} strokeWidth={11} strokeLinecap="round" fill="none"/>}
   </Svg>
@@ -378,43 +379,49 @@ export function Gauge({value,label,subtitle,bolt=false,power,limit=7}:{value:str
 }
 export function HistoryChart({channelId}:{channelId?:ChannelId}={}) {
  const {data}=useSpec(),w=useWords();
- const [details,setDetails]=useState(false),[width,setWidth]=useState(320);
+ const [details,setDetails]=useState(false),[available,setAvailable]=useState(320);
+ const {fontScale}=useWindowDimensions();
+ const width=Math.max(available,280*fontScale),fontSize=12*fontScale;
  const history=useMemo(()=>data.source==='demo'&&data.channels.length===3?createDemoHistory(data.channels):null,[data.source,data.channels]);
  if(!history)return <Card><Copy muted>{w('История измерений пока недоступна','Өлчөөлөрдүн тарыхы азырынча жок')}</Copy></Card>;
  const samples=channelId?history.byChannel[channelId]:history.samples;
  const summary=channelId?integratePower(samples,{maxGapMs:3600000}):history.summary;
  const bars=samples.slice(0,-1),{max,ticks}=chartScale(bars.map(s=>s.freshness==='fresh'?s.watts:null));
- const left=28,right=width-4,baseline=100,plot=80,step=(right-left)/Math.max(1,bars.length);
+ const left=28*fontScale,right=width-4,baseline=100*fontScale,plot=80*fontScale,step=(right-left)/Math.max(1,bars.length);
  const label=(at:number)=>new Date(at).toLocaleTimeString(data.locale==='ky'?'ky-KG':'ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Bishkek'});
  const summaryText=`${w('Демо · 12 ч','Демо · 12 саат')} · ${summary.complete?summary.observedWh.toFixed(1).replace('.',','):'—'} Wh · ${w('Пик','Чоку')} ${formatW(summary.peakW)} Вт`;
  return <Card style={{gap:8}}>
   <View style={s.between}><Copy size={15} style={{flex:1}}>{w('Нагрузка сегодня','Бүгүнкү жүктөм')}</Copy><Pressable accessibilityRole="button" accessibilityLabel={w('Показать энергию и пик','Энергия менен чокуну көрсөтүү')} accessibilityState={{expanded:details}} onPress={()=>setDetails(!details)} style={{minWidth:48,minHeight:48,alignItems:'center',justifyContent:'center'}}><Icon name="info" size={20}/></Pressable></View>
-  <View onLayout={event=>setWidth(event.nativeEvent.layout.width)}>
-   <Svg width={width} height={132} viewBox={`0 0 ${width} 132`} accessibilityLabel={summaryText}>
-    {ticks.map(n=><React.Fragment key={n}><Line x1={left} x2={right} y1={baseline-n/max*plot} y2={baseline-n/max*plot} stroke={theme.line}/><SvgLabel x={0} y={baseline-n/max*plot+4} fill={theme.muted} fontSize={12}>{Number(n.toFixed(1))}</SvgLabel></React.Fragment>)}
+  <ScrollView horizontal showsHorizontalScrollIndicator={width>available} onLayout={event=>setAvailable(event.nativeEvent.layout.width)}>
+   <Svg width={width} height={132*fontScale} viewBox={`0 0 ${width} ${132*fontScale}`} accessibilityLabel={summaryText}>
+    {ticks.map(n=><React.Fragment key={n}><Line x1={left} x2={right} y1={baseline-n/max*plot} y2={baseline-n/max*plot} stroke={theme.line}/><SvgLabel x={0} y={baseline-n/max*plot+4*fontScale} fill={theme.muted} fontSize={fontSize}>{Number(n.toFixed(1))}</SvgLabel></React.Fragment>)}
     {bars.map((sample,i)=>{const value=sample.freshness==='fresh'?chartValue(sample.watts):null;return value!==null?<ChartBar key={sample.at} x={left+i*step+1} width={Math.max(1,step-3)} height={value/max*plot} baseline={baseline} rx={2} fill={i>=bars.length-7&&i<bars.length-2?theme.peach:'#777C6C'}/>:null;})}
-    {[0,6,12,18,24].map((i,j)=><SvgLabel key={i} x={left+(right-left)*j/4} y={124} textAnchor={j===0?'start':j===4?'end':'middle'} fill={theme.muted} fontSize={12}>{label(samples[i].at)}</SvgLabel>)}
+    {[0,6,12,18,24].map((i,j)=><SvgLabel key={i} x={left+(right-left)*j/4} y={124*fontScale} textAnchor={j===0?'start':j===4?'end':'middle'} fill={theme.muted} fontSize={fontSize}>{label(samples[i].at)}</SvgLabel>)}
    </Svg>
-  </View>
+  </ScrollView>
   <Copy size={12} muted>{details?summaryText:w('Вт · модельная история, не измерения','Вт · үлгү тарых, өлчөөлөр эмес')}</Copy>
  </Card>;
 }
 export function ComparisonChart({before,after,labels}:{before:(number|null)[];after:(number|null)[];labels:string[]}) {
  const w=useWords(),[available,setAvailable]=useState(320);
+ const {fontScale}=useWindowDimensions(),fontSize=12*fontScale;
  const {max,ticks}=chartScale([...before,...after]);
- const width=Math.max(available,labels.length*96+40),left=32,baseline=156,plot=124,step=(width-left-8)/Math.max(labels.length,1);
+ const valueChars=Math.max(1,...[...before,...after].map(v=>formatW(chartValue(v)).length));
+ const barGap=Math.max(28,valueChars*7+6)*fontScale;
+ const groupWidth=Math.max(68*fontScale,barGap*2+12*fontScale,...labels.map(label=>(label.length*7+16)*fontScale));
+ const width=Math.max(available,labels.length*groupWidth+40*fontScale),left=32*fontScale,baseline=156*fontScale,plot=124*fontScale,step=(width-left-8)/Math.max(labels.length,1);
  const summary=labels.map((label,i)=>`${label}: ${formatW(chartValue(before[i]))} → ${formatW(chartValue(after[i]))} Вт`).join('; ');
  return <Card style={{gap:12}}>
   <View style={s.between}><Copy size={16} style={{flex:1}}>{w('Почасовая нагрузка','Сааттык жүктөм')}</Copy><Copy muted size={12}>Вт</Copy></View>
   <ScrollView horizontal showsHorizontalScrollIndicator onLayout={event=>setAvailable(event.nativeEvent.layout.width)}>
-   <Svg width={width} height={190} viewBox={`0 0 ${width} 190`} accessibilityLabel={summary}>
-    {ticks.map(v=><React.Fragment key={v}><Line x1={left} x2={width-8} y1={baseline-v/max*plot} y2={baseline-v/max*plot} stroke={theme.line}/><SvgLabel x={0} y={baseline-v/max*plot+4} fill={theme.muted} fontSize={12}>{Number(v.toFixed(1))}</SvgLabel></React.Fragment>)}
+   <Svg width={width} height={190*fontScale} viewBox={`0 0 ${width} ${190*fontScale}`} accessibilityLabel={summary}>
+    {ticks.map(v=><React.Fragment key={v}><Line x1={left} x2={width-8} y1={baseline-v/max*plot} y2={baseline-v/max*plot} stroke={theme.line}/><SvgLabel x={0} y={baseline-v/max*plot+4*fontScale} fill={theme.muted} fontSize={fontSize}>{Number(v.toFixed(1))}</SvgLabel></React.Fragment>)}
     {labels.map((label,i)=><React.Fragment key={`${label}-${i}`}>
-     {[before[i],after[i]].map((raw,j)=>{const v=chartValue(raw),x=left+i*step+step/2-28+j*28;return <React.Fragment key={j}>
-      {v!==null&&<ChartBar baseline={baseline} x={x} width={24} height={v/max*plot} rx={4} fill={j?theme.peach:'#777C6C'}/>}
-      <SvgLabel x={x+12} y={v===null?baseline-6:baseline-v/max*plot-8} fontSize={12} textAnchor="middle" fill={j?theme.peach:theme.muted}>{formatW(v)}</SvgLabel>
+     {[before[i],after[i]].map((raw,j)=>{const v=chartValue(raw),x=left+i*step+step/2-barGap+j*barGap;return <React.Fragment key={j}>
+      {v!==null&&<ChartBar baseline={baseline} x={x} width={barGap-4*fontScale} height={v/max*plot} rx={4} fill={j?theme.peach:'#777C6C'}/>}
+      <SvgLabel x={x+(barGap-4*fontScale)/2} y={v===null?baseline-6*fontScale:baseline-v/max*plot-8*fontScale} fontSize={fontSize} textAnchor="middle" fill={j?theme.peach:theme.muted}>{formatW(v)}</SvgLabel>
      </React.Fragment>;})}
-     <SvgLabel x={left+i*step+step/2} y={180} fontSize={12} textAnchor="middle" fill={theme.muted}>{label}</SvgLabel>
+     <SvgLabel x={left+i*step+step/2} y={180*fontScale} fontSize={fontSize} textAnchor="middle" fill={theme.muted}>{label}</SvgLabel>
     </React.Fragment>)}
    </Svg>
   </ScrollView>
@@ -493,7 +500,7 @@ export const s = StyleSheet.create({
     borderColor: theme.line,
     borderRadius: 26,
     backgroundColor: "#242522",
-    maxWidth: 408,
+    maxWidth: 400,
     width: "92%",
     alignSelf: "center",
   },

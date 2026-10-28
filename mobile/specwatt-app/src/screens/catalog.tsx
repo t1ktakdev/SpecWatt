@@ -6,6 +6,7 @@ import {
   TextInput,
   View,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
@@ -70,6 +71,8 @@ export function CatalogScreen() {
     illustration?: string;
   }>();
   const { data } = useSpec();
+  const {fontScale}=useWindowDimensions();
+  const columns=fontScale>1.2?1:2;
   const w = (ru: string, ky: string) => (data.locale === "ky" ? ky : ru);
   const [config, setConfig] = useState<IllustrationConfig>(() =>
     parseInitial(params.illustration),
@@ -98,7 +101,7 @@ export function CatalogScreen() {
       style={{ flex: 1 }}
     >
       <SafeAreaView style={{ flex: 1 }}>
-        <View style={styles.header}>
+        <View style={[styles.header,{width:"100%",maxWidth:440,alignSelf:"center"}]}>
           <Pressable
             onPress={close}
             accessibilityRole="button"
@@ -117,14 +120,16 @@ export function CatalogScreen() {
           </View>
         </View>
         <FlatList
+          key={columns}
+          style={{width:"100%",maxWidth:440,alignSelf:"center"}}
           data={results}
           keyExtractor={(x) => x.id}
-          numColumns={2}
+          numColumns={columns}
           initialNumToRender={6}
           maxToRenderPerBatch={6}
           windowSize={5}
           keyboardShouldPersistTaps="handled"
-          columnWrapperStyle={{ gap: 10 }}
+          columnWrapperStyle={columns>1?{ gap: 12 }:undefined}
           contentContainerStyle={{
             paddingHorizontal: 20,
             paddingBottom: 20,
@@ -177,7 +182,7 @@ export function CatalogScreen() {
                     accessibilityState={{ selected: config.color === color }}
                     onPress={() => setConfig((c) => ({ ...c, color }))}
                     style={{
-                      minWidth: 45,
+                      minWidth: 48,
                       minHeight: 52,
                       alignItems: "center",
                       justifyContent: "center",
@@ -203,7 +208,7 @@ export function CatalogScreen() {
                         }}
                       />
                     </View>
-                    <Copy size={12} style={{ fontSize: 10 }}>
+                    <Copy size={12} style={{ fontSize: 12 }}>
                       {w(colorNames[color][0], colorNames[color][1])}
                     </Copy>
                   </Pressable>
@@ -326,6 +331,7 @@ export function CatalogScreen() {
               )}
               style={[
                 styles.tile,
+                {maxWidth:columns===1?"100%":"49%"},
                 config.categoryId === item.id && styles.selected,
               ]}
             >
@@ -336,7 +342,6 @@ export function CatalogScreen() {
               />
               <Copy
                 size={13}
-                numberOfLines={2}
                 style={{ minHeight: 35, textAlign: "center" }}
               >
                 {w(item.ru, item.ky)}
@@ -368,8 +373,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   back: {
-    width: 45,
-    height: 45,
+    width: 48,
+    height: 48,
     borderRadius: 24,
     borderWidth: 1,
     borderColor: theme.line,
@@ -384,7 +389,8 @@ const styles = StyleSheet.create({
   },
   choice: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 48,
+    paddingVertical: 10,
     borderWidth: 1,
     borderColor: theme.line,
     borderRadius: 20,
@@ -398,7 +404,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.line,
     paddingHorizontal: 15,
-    minHeight: 40,
+    minHeight: 48,
+    paddingVertical: 10,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -414,6 +421,9 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   footer: {
+    width: "100%",
+    maxWidth: 440,
+    alignSelf: "center",
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 10,

@@ -147,7 +147,7 @@ export function AutopilotScreen() {
               router.push({ pathname: "/device", params: { id: "CH3" } })
             }
           />
-          <Card style={{ padding: 0 }}>
+          <Card style={{ padding: 0, borderWidth: 0, backgroundColor: "transparent", gap: 12 }}>
             <RowLink
               icon="pulse"
               title={w("Допустимый пик", "Уруксат берилген чоку")}

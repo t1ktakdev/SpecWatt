@@ -21,15 +21,15 @@ export function feedback(kind:'selection'|'confirm'|'reject'='selection',reduced
  const action=Platform.OS==='android'?Haptics.performAndroidHapticsAsync(kind==='reject'?Haptics.AndroidHaptics.Reject:kind==='confirm'?Haptics.AndroidHaptics.Confirm:Haptics.AndroidHaptics.Segment_Tick):Haptics.selectionAsync();
  action.catch(()=>{});
 }
-export function MotionPressable({style,onPress,onPressIn,onPressOut,onHoverIn,onHoverOut,disabled,...props}:PressableProps){
+export function MotionPressable({style,onPress,onPressIn,onPressOut,onHoverIn,onHoverOut,onFocus,onBlur,disabled,...props}:PressableProps){
  const reduced=useMotion(),scale=useSharedValue(1);
- const [pressed,setPressed]=useState(false),[hovered,setHovered]=useState(false);
+ const [pressed,setPressed]=useState(false),[hovered,setHovered]=useState(false),[focused,setFocused]=useState(false);
  // Reanimated normalizes style to an array before native Pressable sees it.
  // Resolve the state callback here so Yoga receives dimensions and positioning.
  const animated=useAnimatedStyle(()=>({transform:[{scale:scale.value}]}));
  useEffect(()=>{if(disabled||reduced){cancelAnimation(scale);scale.set(1);}return()=>cancelAnimation(scale);},[disabled,reduced,scale]);
  const pressState={pressed:pressed&&!disabled,hovered:hovered&&!disabled};
- return <AnimatedPressable {...props} disabled={disabled} onHoverIn={e=>{setHovered(true);onHoverIn?.(e);}} onHoverOut={e=>{setHovered(false);onHoverOut?.(e);}} onPressIn={e=>{setPressed(true);cancelAnimation(scale);scale.set(withTiming(reduced?1:motion.pressScale,{duration:motionDuration('fast',reduced),reduceMotion:ReduceMotion.System}));onPressIn?.(e);}} onPressOut={e=>{setPressed(false);cancelAnimation(scale);scale.set(withSpring(1,{...motion.spring,reduceMotion:ReduceMotion.System}));onPressOut?.(e);}} onPress={e=>{feedback('selection',reduced);onPress?.(e);}} style={[typeof style==='function'?style(pressState):style,animated]}/>;
+ return <AnimatedPressable {...props} disabled={disabled} onFocus={e=>{setFocused(true);onFocus?.(e);}} onBlur={e=>{setFocused(false);onBlur?.(e);}} onHoverIn={e=>{setHovered(true);onHoverIn?.(e);}} onHoverOut={e=>{setHovered(false);onHoverOut?.(e);}} onPressIn={e=>{setPressed(true);cancelAnimation(scale);scale.set(withTiming(reduced?1:motion.pressScale,{duration:motionDuration('fast',reduced),reduceMotion:ReduceMotion.System}));onPressIn?.(e);}} onPressOut={e=>{setPressed(false);cancelAnimation(scale);scale.set(withSpring(1,{...motion.spring,reduceMotion:ReduceMotion.System}));onPressOut?.(e);}} onPress={e=>{feedback('selection',reduced);onPress?.(e);}} style={[typeof style==='function'?style(pressState):style,animated,Platform.OS==='web'&&focused&&!disabled&&{outlineWidth:2,outlineStyle:'solid',outlineOffset:3,outlineColor:'#FFAA69'}]}/>;
 }
 export function Reveal({children,style}:{children:React.ReactNode;style?:StyleProp<ViewStyle>}){const reduced=useMotion();return <Animated.View entering={reduced?undefined:FadeIn.duration(motion.duration.standard).reduceMotion(ReduceMotion.System)} style={style}>{children}</Animated.View>;}
 export function AnimatedMetric({value,style,accessibilityLabel}:{value:number|null;style?:StyleProp<TextStyle>;accessibilityLabel:string}){
@@ -53,7 +53,7 @@ export function ChartBar({height,baseline=68,...props}:React.ComponentProps<type
 export function AnimatedSelection({selected,children,style}:{selected:boolean;children:React.ReactNode;style?:StyleProp<ViewStyle>}){
  const reduced=useMotion(),t=useSharedValue(selected?1:0);
  useEffect(()=>{cancelAnimation(t);t.set(withTiming(selected?1:0,{duration:motionDuration('standard',reduced),reduceMotion:ReduceMotion.System}));return()=>cancelAnimation(t);},[selected,t,reduced]);
- const animated=useAnimatedStyle(()=>({backgroundColor:`rgba(255,172,112,${t.value})`,transform:[{scale:1+t.value*.02}]}));
+ const animated=useAnimatedStyle(()=>({backgroundColor:`rgba(255,170,105,${t.value})`,transform:[{scale:1+t.value*.02}]}));
  return <Animated.View style={[style,animated]}>{children}</Animated.View>;
 }
 export function useToggleMotion(value:boolean){

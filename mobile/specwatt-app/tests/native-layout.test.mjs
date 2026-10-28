@@ -50,6 +50,12 @@ test('native pressable preserves card geometry and press-state colors through Re
   node.props.onPressOut({});
   node = render({style});
   assert.equal(node.props.style[0][1].backgroundColor, '#idle');
+  node.props.onFocus({});
+  node = render({style});
+  assert.equal(node.props.style[2].outlineWidth, 2, 'keyboard focus must be visible');
+  node.props.onBlur({});
+  node = render({style});
+  assert.equal(node.props.style[2], false);
 });
 
 test('all SVG gradient offsets use Android-compatible numeric or percentage values', () => {
