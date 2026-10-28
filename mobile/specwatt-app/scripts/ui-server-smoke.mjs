@@ -1,3 +1,4 @@
+const qaBaseUrl = process.env.QA_BASE_URL || 'http://localhost:8097';
 // Real UI + real disposable loopback backend. No production credentials/storage.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -15,7 +16,7 @@ const port=await new Promise(resolve=>{const probe=net.createServer();probe.list
 const base=`http://127.0.0.1:${port}`;
 const server=spawn('python',['-m','uvicorn','specwatt_api.app:create_app','--factory','--host','127.0.0.1','--port',String(port),'--log-level','error'],{
  cwd:fileURLToPath(new URL('../../../backend',import.meta.url)),windowsHide:true,stdio:'ignore',
- env:{...process.env,SPECWATT_DB:path.join(temp,'ui.sqlite3'),SPECWATT_CORS_ORIGINS:'http://localhost:8097',SPECWATT_SCHEDULER_ENABLED:'0'},
+ env:{...process.env,SPECWATT_DB:path.join(temp,'ui.sqlite3'),SPECWATT_CORS_ORIGINS:new URL(qaBaseUrl).origin,SPECWATT_SCHEDULER_ENABLED:'0'},
 });
 let browser,page;
 const evidence='outputs/ui-qa/server';fs.mkdirSync(evidence,{recursive:true});
@@ -30,7 +31,7 @@ try {
  page.on('requestfailed',r=>console.log('Failed transport:',r.url(),r.failure()?.errorText));
  page.on('console',m=>{if(m.type()==='error')console.log('Browser error:',m.text());});
  await page.addInitScript(fixture=>{if(!sessionStorage.getItem('qa')){localStorage.setItem('specwatt-mobile-v1',JSON.stringify(fixture));sessionStorage.setItem('qa','1');}},demoState());
- await page.goto('http://localhost:8097/server');
+ await page.goto(qaBaseUrl+'/server');
  console.log('Browser fetch diagnostic:',await page.evaluate(async base=>{
   let detached;
   try{await window.fetch.call({},base+'/health');detached='accepted';}catch(error){detached=String(error);}

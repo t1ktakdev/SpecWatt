@@ -1,3 +1,4 @@
+const qaBaseUrl = process.env.QA_BASE_URL || 'http://localhost:8097';
 // Optional QA tooling. Uses an externally supplied existing Playwright install;
 // no runtime dependency or test bypass is added to the app.
 import fs from 'node:fs';
@@ -46,7 +47,7 @@ try {
       }
       for (const route of ['/home','/devices','/autopilot','/plan','/journal','/device?id=CH2','/catalog','/setup','/settings','/server']) {
         if(routeFilter&&!routeFilter.includes(route))continue;
-        await page.goto(`http://localhost:8097${route}`);
+        await page.goto(`${qaBaseUrl}${route}`);
         await page.waitForFunction(()=>document.querySelector('[role="tab"], [role="button"]'),{timeout:60000});
         await capture(route.slice(1).replace('?id=','-'),route);
         if(phase==='after'&&(width===320||width===440)) {
@@ -67,18 +68,18 @@ try {
         edge.channels[0].assigned.name=locale==='ru'?'Светильник с очень длинным пользовательским названием':'Колдонуучунун узун аталышы бар бөлмөдөгү чырак';
         edge.channels[1].watts=4.2;edge.channels[1].freshness='stale';
         await page.evaluate(fixture=>localStorage.setItem('specwatt-mobile-v1',JSON.stringify(fixture)),edge);
-        await page.goto('http://localhost:8097/home');
+        await page.goto(qaBaseUrl+'/home');
         await capture('home-missing-stale','/home (missing/stale + long-name fixture)');
         if(await page.getByRole('switch',{disabled:true}).count()!==2)throw Error('unknown/stale channels must not be controllable');
-        await page.goto('http://localhost:8097/device?id=CH2');
+        await page.goto(qaBaseUrl+'/device?id=CH2');
         await capture('detail-stale','/device?id=CH2 (stale fixture; historical value labelled)');
-        await page.goto('http://localhost:8097/journal');
+        await page.goto(qaBaseUrl+'/journal');
         await page.getByRole('button',{name:locale==='ru'?'Ошибки':'Каталар',exact:true}).click();
         await capture('journal-filter-empty','/journal (error filter; no matching events)');
       }
       if (!routeFilter&&width===393) {
         await page.evaluate(fixture=>localStorage.setItem('specwatt-mobile-v1',JSON.stringify(fixture)),{...emptyState(),locale});
-        await page.goto('http://localhost:8097/');
+        await page.goto(qaBaseUrl+'/');
         await capture('welcome','/');
         await page.getByRole('button',{name:locale==='ru'?'Продолжить':'Улантуу',exact:true}).click();
         await capture('language','/ (locale)');

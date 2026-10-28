@@ -1,3 +1,4 @@
+const qaBaseUrl = process.env.QA_BASE_URL || 'http://localhost:8097';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {createRequire} from 'node:module';
@@ -6,13 +7,14 @@ const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 const browser=await chromium.launch({headless:true,channel:'msedge'});
 const results=[];
+fs.mkdirSync('outputs/ui-qa', {recursive:true});
 try {
  for(const locale of ['ru','ky']) {
   const context=await browser.newContext({viewport:{width:360,height:800},reducedMotion:'reduce'});
   const page=await context.newPage(),errors=[],requests=[];
   page.on('pageerror',e=>errors.push(String(e)));
-  page.on('request',r=>{if(/\/api\//.test(r.url()))requests.push(r.url());});
-  await page.goto('http://localhost:8097/');
+  page.on('request',r=>{if(/\/(?:api|v1)\//.test(r.url()))requests.push(r.url());});
+  await page.goto(qaBaseUrl+'/');
   await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
   await page.getByRole('button',{name:locale==='ru'?'Русский':'Кыргызча',exact:true}).click();
   await page.getByRole('button',{name:t(locale,'next'),exact:true}).click();
@@ -39,7 +41,7 @@ try {
   await page.getByRole('tab',{name:'Журнал',exact:true}).click();
   await page.getByRole('button',{name:locale==='ru'?'Ошибки':'Каталар',exact:true}).click();
   await page.getByText(locale==='ru'?'В этом фильтре нет событий':'Бул чыпкада окуялар жок',{exact:true}).waitFor();
-  await page.goto('http://localhost:8097/setup');
+  await page.goto(qaBaseUrl+'/setup');
   await page.getByRole('button',{name:t(locale,'configureCurrent'),exact:true}).click();
   await page.getByRole('button',{name:`CH1 · ${ch1.assigned.name}`,exact:true}).click();
   await page.getByRole('button',{name:t(locale,'svgCatalog'),exact:true}).click();
@@ -62,7 +64,7 @@ try {
  }
  // A separate profile proves the empty onboarding route without erasing user data.
  const context=await browser.newContext({viewport:{width:320,height:700}}),page=await context.newPage();
- await page.goto('http://localhost:8097/');
+ await page.goto(qaBaseUrl+'/');
  await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
  await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
  await page.getByRole('button',{name:t('ru','empty'),exact:true}).click();
