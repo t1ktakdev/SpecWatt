@@ -103,8 +103,8 @@ test("bundled image ids fall back to meaningful catalogue vectors", () => {
     ["CH3", "lamp", "pc-fan"],
     [undefined, "fan", "pc-fan"],
     ["CH1", "lamp", "mushroom-lamp"],
-    [undefined, undefined, "mushroom-lamp"],
-    [undefined, "lamp-scene", "mushroom-lamp"],
+    [undefined, undefined, "unknown"],
+    [undefined, "lamp-scene", "unknown"],
   ];
   for (const [id, image, expected] of cases) {
     const config = exports.defaultDeviceConfig(id, image);
@@ -182,8 +182,7 @@ test("stale persisted vector config or foreign photo uri falls back without brea
   };
   resetState();
   const element = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
-  assert.equal(element.type, "Image", "appearance incompatible with the current catalogue is dropped");
-  assert.equal(element.props.source, imageMap.lamp, "bundled photo remains the default");
+  assert.equal(element.type, "Vector", "invalid appearance falls back to SVG");
 
   resetState();
   const remote = exports.DeviceVisual({
@@ -193,8 +192,7 @@ test("stale persisted vector config or foreign photo uri falls back without brea
     },
     id: "CH1",
   }).props.children.at(-1);
-  assert.equal(remote.type, "Image", "remote uri rejected by policy falls back to bundled photo");
-  assert.equal(remote.props.source, imageMap.lamp);
+  assert.equal(remote.type, "Vector", "rejected remote photo falls back to SVG");
 
   resetState();
   const traversal = exports.DeviceVisual({
@@ -204,8 +202,7 @@ test("stale persisted vector config or foreign photo uri falls back without brea
     },
     id: "CH1",
   }).props.children.at(-1);
-  assert.equal(traversal.type, "Image");
-  assert.equal(traversal.props.source, imageMap.lamp);
+  assert.equal(traversal.type, "Vector");
   resetState();
 });
 
@@ -250,133 +247,54 @@ test("a valid persisted vector appearance renders exactly the chosen configurati
   resetState();
 });
 
-test("every bundled image id renders through the bundled branch, never a broken image", () => {
+
+// Policy deliberately changed: legacy images are category hints, not photo consent.
+// Keep repeat-render/source-change coverage without mounting an implicit photo.
+test("every legacy image uses SVG on the first render", () => {
   const { exports, imageMap, resetState } = loadDeviceVisual();
   for (const image of Object.keys(imageMap)) {
     resetState();
-    const element = exports.DeviceVisual({
-      assignment: { name: "x", category: image, image, room: "", allowAuto: false },
-      id: "CH1",
-    }).props.children.at(-1);
-    assert.equal(element.type, "Image", image);
-    assert.equal(element.props.source, imageMap[image], image);
+    const element=exports.DeviceVisual({assignment:{name:"x",image},id:"CH1"}).props.children.at(-1);
+    assert.equal(element.type,"Vector",image);
   }
-  resetState();
 });
-
-test("a failing bundled asset degrades to its vector and is never re-requested", () => {
-  const { exports, catalogExports, imageMap, resetState, rewind } = loadDeviceVisual();
-  // Every bundled id must fall back to the vector its image maps to.
-  const expectedCategory = {
-    lamp: "mushroom-lamp",
-    "led-strip": "led-strip",
-    fan: "pc-fan",
-    charger: "phone-charger",
-    socket: "smart-socket",
-    appliance: "kettle",
-    "lamp-scene": "mushroom-lamp",
-  };
-  for (const image of Object.keys(imageMap)) {
-    resetState();
-    const assignment = { name: "x", category: image, image, room: "", allowAuto: false };
-    const initial = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
-    assert.equal(initial.type, "Image", image);
-    assert.equal(initial.props.source, imageMap[image], image);
-    initial.props.onError();
-    rewind();
-    const degraded = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
-    assert.equal(degraded.type, "Vector", `${image}: decode failure must reach the vector`);
-    assert.equal(
-      degraded.props.config.categoryId,
-      expectedCategory[image],
-      `${image}: fallback vector must match the bundled subject`,
-    );
-    // Further renders keep the vector: the broken source is not retried.
-    for (let i = 0; i < 3; i++) {
-      rewind();
-      const again = exports.DeviceVisual({ assignment, id: "CH1" }).props.children.at(-1);
-      assert.equal(again.type, "Vector", `${image}: render ${i + 2} must not re-mount the broken image`);
-    }
-  }
-  resetState();
-});
-
-test("switching to another bundled asset after a failure is not poisoned by stale state", () => {
-  const { exports, imageMap, resetState, rewind } = loadDeviceVisual();
-  resetState();
-  const broken = { name: "x", category: "appliance", image: "appliance", room: "", allowAuto: false };
-  const first = exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1);
-  assert.equal(first.type, "Image");
-  first.props.onError();
-  rewind();
-  assert.equal(
-    exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1).type,
-    "Vector",
-  );
-  // A different, healthy bundled asset must still render as a photo: the same
-  // card instance (preserved failure state) re-renders with the new assignment.
-  rewind();
-  const healthy = { ...broken, category: "fan", image: "fan" };
-  const switched = exports.DeviceVisual({ assignment: healthy, id: "CH1" }).props.children.at(-1);
-  assert.equal(switched.type, "Image", "stale failure state must not poison another asset");
-  assert.equal(switched.props.source, imageMap.fan);
-  // If the healthy one fails too, it degrades the same way...
-  switched.props.onError();
-  rewind();
-  assert.equal(
-    exports.DeviceVisual({ assignment: healthy, id: "CH1" }).props.children.at(-1).type,
-    "Vector",
-  );
-  // ...and re-selecting the first broken asset retries it exactly once (the
-  // failure cache holds the last failed source, matching the custom-photo
-  // semantics), then degrades again — never a retry on every render.
-  rewind();
-  const retry = exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1);
-  assert.equal(retry.type, "Image", "re-selection retries a source once, not on every render");
-  retry.props.onError();
-  rewind();
-  assert.equal(
-    exports.DeviceVisual({ assignment: broken, id: "CH1" }).props.children.at(-1).type,
-    "Vector",
-  );
-  // A third, still-healthy asset renders.
-  const third = { ...broken, category: "socket", image: "socket" };
-  const fresh = exports.DeviceVisual({ assignment: third, id: "CH1" }).props.children.at(-1);
-  assert.equal(fresh.type, "Image");
-  assert.equal(fresh.props.source, imageMap.socket);
-  resetState();
-});
-
-test("scene mode keeps the warm graphite backdrop when a bundled asset fails", () => {
+test("legacy SVG stays stable across repeated renders", () => {
   const { exports, resetState, rewind } = loadDeviceVisual();
   resetState();
-  const assignment = { name: "Чайник", category: "appliance", image: "appliance", room: "", allowAuto: false };
-  const sceneView = exports.DeviceVisual({ assignment, id: "CH1", scene: true });
-  const initial = sceneView.props.children.at(-1);
-  assert.equal(initial.type, "Image");
-  assert.equal(initial.props.accessibilityLabel, "Чайник");
+  for(let i=0;i<4;i++) {
+    rewind();
+    const element=exports.DeviceVisual({assignment:{name:"x",image:"led-strip"},id:"CH2"}).props.children.at(-1);
+    assert.equal(element.type,"Vector");
+    assert.equal(element.props.config.categoryId,"led-strip");
+  }
+});
+test("switching legacy subjects updates the vector without mounting photos", () => {
+  const { exports, resetState, rewind } = loadDeviceVisual();
+  resetState();
+  for(const [image,category] of [["appliance","kettle"],["fan","pc-fan"],["socket","smart-socket"]]) {
+    rewind();
+    const element=exports.DeviceVisual({assignment:{name:"x",image},id:"CH1"}).props.children.at(-1);
+    assert.equal(element.type,"Vector");
+    assert.equal(element.props.config.categoryId,category);
+  }
+});
+test("photo decode failure retains the scene and semantic name", () => {
+  const { exports, ownedPhotoUri, resetState, rewind } = loadDeviceVisual();
+  resetState();
+  const assignment={name:"Чайник",image:"appliance",appearance:{kind:"photo",uri:ownedPhotoUri}};
+  const initial=exports.DeviceVisual({assignment,id:"CH1",scene:true}).props.children.at(-1);
+  assert.equal(initial.type,"Image");
   initial.props.onError();
   rewind();
-  const degraded = exports.DeviceVisual({ assignment, id: "CH1", scene: true });
-  assert.equal(degraded.props.children[0].type, "Gradient", "scene backdrop must stay painted");
-  const vector = degraded.props.children.at(-1);
-  assert.equal(vector.type, "Vector");
-  assert.equal(vector.props.config.categoryId, "kettle");
-  assert.equal(vector.props.accessibilityLabel, "Чайник");
-  resetState();
+  const degraded=exports.DeviceVisual({assignment,id:"CH1",scene:true});
+  assert.equal(degraded.props.children[0].type,"Gradient");
+  assert.equal(degraded.props.children.at(-1).type,"Vector");
+  assert.equal(degraded.props.children.at(-1).props.accessibilityLabel,"Чайник");
 });
-
-test("scene mode paints the warm graphite backdrop behind the visual", () => {
-  const { exports, imageMap, resetState } = loadDeviceVisual();
+test("scene retains a backdrop behind the default vector", () => {
+  const { exports, resetState }=loadDeviceVisual();
   resetState();
-  const element = exports.DeviceVisual({
-    assignment: { name: "x", category: "lamp", image: "lamp", room: "", allowAuto: false },
-    id: "CH1",
-    scene: true,
-  });
-  const backdrop = element.props.children[0];
-  assert.equal(backdrop.type, "Gradient");
-  assert.equal(JSON.stringify(backdrop.props.colors), JSON.stringify(["#30271E", "#211E18", "#191D18"]));
-  assert.equal(element.props.children.at(-1).props.source, imageMap.lamp);
-  resetState();
+  const node=exports.DeviceVisual({assignment:{name:"x",image:"lamp"},id:"CH1",scene:true});
+  assert.equal(node.props.children[0].type,"Gradient");
+  assert.equal(node.props.children.at(-1).type,"Vector");
 });

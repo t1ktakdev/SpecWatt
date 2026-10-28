@@ -344,7 +344,9 @@ export class BrainClient {
   constructor(options: Options) {
     this.baseUrl = normalizeServerUrl(options.baseUrl, options.development);
     this.vault = options.vault;
-    this.fetcher = options.fetcher ?? fetch;
+    // Browser fetch requires the global receiver; calling it as a client
+    // method otherwise throws Illegal invocation before reaching the network.
+    this.fetcher = options.fetcher ?? fetch.bind(globalThis);
     this.timeoutMs = options.timeoutMs ?? 8000;
     this.retryDelayMs = options.retryDelayMs ?? 400;
   }

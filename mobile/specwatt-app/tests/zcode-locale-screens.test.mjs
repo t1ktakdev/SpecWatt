@@ -133,7 +133,7 @@ test('KY onboarding welcome page shows Kyrgyz feature badges, never Russian ones
   const tree = render();
   const text = treeText(tree);
   assert.ok(text.includes('Жүктөм'), 'KY badge "Жүктөм" must render');
-  assert.ok(text.includes('Баары иштейт'), 'KY welcome title must render');
+  assert.ok(text.includes(i18n.t('ky', 'welcomeTitle1')), 'KY welcome title must render');
   assert.ok(!text.includes('Нагрузка'), 'hardcoded Russian badge leaked into KY onboarding');
   assert.ok(!text.includes('Всё работает'), 'hardcoded Russian title leaked into KY onboarding');
 });
@@ -164,7 +164,7 @@ test('login form inputs carry accessibility labels and errors are announced', ()
   const store = storeBase();
   const { render, states } = indexHarness(store);
   let tree = render();
-  find(tree, (n) => isType('CTA')(n) && n.props.label === i18n.t('ky', 'loginUnavailable')).props.onPress();
+  find(tree, (n) => isType('Pressable')(n) && n.props.accessibilityLabel === i18n.t('ky', 'loginUnavailable')).props.onPress();
   tree = render();
   const labels = findAll(tree, isType('TextInput')).map((n) => n.props.accessibilityLabel);
   assert.ok(labels.includes(i18n.t('ky', 'email')), 'email input needs a label');
@@ -389,7 +389,7 @@ test('settings renders fully in Kyrgyz without per-screen word helpers', () => {
   assert.ok(!text.includes('Язык интерфейса'), 'Russian language label leaked under KY');
 });
 
-test('language chips meet the 44dp press target and expose selected state', () => {
+test('language chips meet the 48dp press target and expose selected state', () => {
   const setLocale = [];
   const store = {
     data: { locale: 'ky', source: 'demo', peak: 7, manualMinutes: 30 },
@@ -403,10 +403,10 @@ test('language chips meet the 44dp press target and expose selected state', () =
   assert.equal(kyChip.props.accessibilityState.selected, true);
   const heights = chips.map((c) =>
     (Array.isArray(c.props.style) ? c.props.style : [c.props.style]).some(
-      (part) => part && part.minHeight >= 44,
+      (part) => part && part.minHeight >= 48,
     ),
   );
-  assert.deepEqual(heights, [true, true], 'both chips need a >=44dp press target');
+  assert.deepEqual(heights, [true, true], 'both chips need a >=48dp press target');
   const ruChip = chips.find((c) => treeText(c).includes('Русский'));
   ruChip.props.onPress();
   assert.deepEqual(setLocale, ['ru']);

@@ -71,6 +71,7 @@ function loadCatalog({ locale = "ru", params = {} } = {}) {
           ScrollView: "ScrollView",
           TextInput: "TextInput",
           StyleSheet: { create: (s) => s },
+          useWindowDimensions: () => ({width:393,fontScale:1}),
           FlatList: (props) =>
             react.createElement("FlatList", props, [
               props.ListHeaderComponent

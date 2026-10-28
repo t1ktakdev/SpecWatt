@@ -94,11 +94,11 @@ export function DeviceScreen() {
       </View>
       <DeviceVisual
         scene assignment={channel.assigned} id={channel.id}
-        style={{ width: "100%", height: 180, borderRadius: 3, marginTop: 10 }}
+        style={{ width: "100%", height: 180, borderRadius: theme.r.card, marginTop: 10 }}
       />
       <View style={{ alignItems: "center", gap: 3 }}>
         <Copy size={57}>
-          {formatW(channel.watts)}
+          {formatW(channel.freshness==="fresh"?channel.watts:null)}
           <Copy size={31}> Вт</Copy>
         </Copy>
         <Copy size={12} muted>
@@ -106,7 +106,9 @@ export function DeviceScreen() {
         </Copy>
         <Copy size={15} accent>
           ●{" "}
-          {channel.protected
+          {channel.watts===null||channel.freshness!=="fresh"
+            ? w("Нет свежих измерений", "Жаңы өлчөөлөр жок")
+            : channel.protected
             ? w("Защищён", "Корголгон")
             : (channel.watts ?? 0) > 0
               ? w("Включена", "Күйүк")
@@ -115,8 +117,8 @@ export function DeviceScreen() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={w("Переключить устройство", "Түзмөктү которуу")}
-          accessibilityState={{ disabled: channel.protected }}
-          disabled={channel.protected}
+          accessibilityState={{ disabled: channel.protected||channel.watts===null||channel.freshness!=="fresh" }}
+          disabled={channel.protected||channel.watts===null||channel.freshness!=="fresh"}
           onPress={() => toggleChannel(channel.id)}
           style={{
             height: 92,
@@ -138,6 +140,7 @@ export function DeviceScreen() {
           />
         </Pressable>
       </View>
+      {channel.freshness==="stale"&&channel.watts!==null&&<Copy size={13} muted>{w("Последнее известное значение", "Акыркы белгилүү маани")}: {channel.watts} Вт</Copy>}
       <HistoryChart channelId={channel.id} />
       <RowLink
         icon="bolt"

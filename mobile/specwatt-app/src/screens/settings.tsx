@@ -65,7 +65,7 @@ export function SettingsScreen() {
               onPress={() => applyLocale(setLocale, l)}
               style={[
                 s.chip,
-                { minHeight: 44 },
+                { minHeight: 48 },
                 data.locale === l && { borderColor: theme.peach },
               ]}
             >

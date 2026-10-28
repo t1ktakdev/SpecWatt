@@ -1,5 +1,5 @@
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { MotionProvider } from "../specwatt/motion";
+import { MotionProvider, useMotion } from "../specwatt/motion";
 import { motion } from "../specwatt/motion-tokens";
 import React, { useEffect, useState } from "react";
 import { Stack } from "expo-router";
@@ -30,6 +30,9 @@ export default function Layout() {
         useNativeDriver: true,
       }),
     ]);
+    const listener=AccessibilityInfo.addEventListener("reduceMotionChanged", reduce=>{
+      if(reduce&&active){animation.stop();setComplete(true);}
+    });
     AccessibilityInfo.isReduceMotionEnabled()
       .then((reduce) => {
         if (!active) return;
@@ -45,6 +48,7 @@ export default function Layout() {
     return () => {
       active = false;
       animation.stop();
+      listener.remove();
     };
   }, [loaded, fontError, opacity]);
   if (!loaded && !fontError)
@@ -52,20 +56,7 @@ export default function Layout() {
   return (
     <GestureHandlerRootView style={{flex:1}}><MotionProvider><SpecProvider>
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: theme.bg },
-            animation: "fade",
-            animationDuration: motion.duration.standard,
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="setup" />
-          <Stack.Screen name="home" />
-          <Stack.Screen name="device" options={{animation:"slide_from_right"}}/>
-          <Stack.Screen name="catalog" options={{animation:"slide_from_bottom"}}/>
-        </Stack>
+        <AppNavigation />
         {!complete && (
           <Animated.View
             pointerEvents="none"
@@ -118,5 +109,25 @@ export default function Layout() {
         )}
       </View>
     </SpecProvider></MotionProvider></GestureHandlerRootView>
+  );
+}
+
+export function AppNavigation() {
+  const reduced=useMotion();
+  return (
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: theme.bg },
+            animation: reduced ? "none" : "fade",
+            animationDuration: motion.duration.standard,
+          }}
+        >
+          <Stack.Screen name="index" />
+          <Stack.Screen name="setup" />
+          <Stack.Screen name="home" />
+          <Stack.Screen name="device" options={{animation:reduced?"none":"slide_from_right"}}/>
+          <Stack.Screen name="catalog" options={{animation:reduced?"none":"slide_from_bottom"}}/>
+        </Stack>
   );
 }

@@ -19,10 +19,11 @@ import { applyLocale } from "../specwatt/localization/locale-mirror";
 
 type Page = "welcome" | "locale" | "mode" | "login" | "register" | "recovery";
 export default function Onboarding() {
-  const { height } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
+  const welcomeTitleSize = width < 360 ? 28 : 32;
   const insets = useSafeAreaInsets();
   const availableHeight = height - insets.top - insets.bottom;
-  const welcomeImageHeight = Math.max(130, Math.min(220, availableHeight * 0.24));
+  const welcomeImageHeight = Math.max(130, Math.min(184, availableHeight * 0.22));
   const { data, ready, setLocale, enterDemo, setOnboarded } = useSpec();
   const [page, setPage] = useState<Page>("welcome");
   const [email, setEmail] = useState("");
@@ -74,9 +75,9 @@ export default function Onboarding() {
       >
         <ScrollView
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={[sty.body, { paddingTop: 24, maxWidth: 440, width: "100%", alignSelf: "center" }, page === "welcome" && { gap: 12 }]}
+          contentContainerStyle={[sty.body, { paddingTop: 24, maxWidth: 440, width: "100%", alignSelf: "center" }, page === "welcome" && { gap: 16 }]}
         >
-          <View style={[sty.row, { justifyContent: "space-between" }]}>
+          <View style={[sty.row, { justifyContent: "space-between", gap: 12, flexWrap: "wrap" }]}>
             <Copy size={26}>
               Spec
               <Copy size={26} accent>
@@ -95,9 +96,9 @@ export default function Onboarding() {
                   style={{ width: "100%", height: welcomeImageHeight }}
                 />
               </Panel>
-              <Copy size={32}>
+              <Copy size={welcomeTitleSize}>
                 {t(locale, "welcomeTitle1")}{"\n"}
-                <Copy size={32} accent>{t(locale, "welcomeTitle2")}</Copy>
+                <Copy size={welcomeTitleSize} accent>{t(locale, "welcomeTitle2")}</Copy>
               </Copy>
               <Copy muted>
                 {t(locale, "welcomeSubtitle")}
@@ -116,11 +117,9 @@ export default function Onboarding() {
                 ))}
               </View>
               <CTA label={t(locale, "next")} onPress={() => go("locale")} />
-              <CTA
-                label={t(locale, "loginUnavailable")}
-                secondary
-                onPress={() => go("login")}
-              />
+              <Pressable accessibilityRole="button" accessibilityLabel={t(locale,"loginUnavailable")} onPress={() => go("login")} style={{minHeight:48,justifyContent:'center',alignItems:'center',padding:8}}>
+                <Copy muted size={13} style={{textAlign:'center'}}>{t(locale,"loginUnavailable")}</Copy>
+              </Pressable>
             </>
           )}
           {page === "locale" && (
@@ -129,7 +128,7 @@ export default function Onboarding() {
               <Copy muted>
                 {t(locale, "languageNote")}
               </Copy>
-              <View style={[sty.row, { gap: 13, marginVertical: 28 }]}>
+              <View style={[sty.row, { gap: 12, marginVertical: 16, alignItems: "stretch" }]}>
                 {(["ru", "ky"] as const).map((code) => (
                   <Pressable
                     key={code}
@@ -141,8 +140,11 @@ export default function Onboarding() {
                     style={[
                       sty.card,
                       {
-                        width: "48%",
-                        minHeight: 185,
+                        flex: 1,
+                        minWidth: 0,
+                        gap: 16,
+                        minHeight: 168,
+                        borderColor: code === locale ? theme.peach : theme.line,
                         justifyContent: "space-between",
                         backgroundColor:
                           code === locale ? theme.raised : theme.surface,
@@ -190,8 +192,9 @@ export default function Onboarding() {
                 style={[
                   sty.card,
                   {
-                    minHeight: 205,
-                    marginTop: 20,
+                    minHeight: 160,
+                    gap: 12,
+                    marginTop: 8,
                     backgroundColor: theme.raised,
                     justifyContent: "space-between",
                   },
@@ -200,7 +203,7 @@ export default function Onboarding() {
                 <Copy size={12} accent>
                   01 / {t(locale, "myEquipment")}
                 </Copy>
-                <Copy size={28}>{t(locale, "real")}</Copy>
+                <Copy size={24}>{t(locale, "real")}</Copy>
                 <Copy muted>
                   {t(locale, "realSub")}
                 </Copy>
@@ -212,7 +215,7 @@ export default function Onboarding() {
                 onPress={chooseDemo}
                 style={[
                   sty.card,
-                  { minHeight: 145, justifyContent: "space-between" },
+                  { minHeight: 145, justifyContent: "space-between", gap: 12, flexWrap: "wrap" },
                 ]}
               >
                 <Copy size={12} accent>
