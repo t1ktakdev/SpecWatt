@@ -6,16 +6,18 @@ export const theme = {
   peach: "#FFAA69",
   line: "#41433D",
   text: "#F4F4F2",
-  muted: "#A5A69F",
-  dim: "#8D908B",
+  muted: "#B5B7AE",
+  dim: "#A5A99F",
   ink: "#22201D",
   error: "#F27C67",
-  r: { card: 23, pill: 30, tile: 19 },
+  r: { card: 20, pill: 28, tile: 16 },
+  spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 },
+  contentWidth: 440,
   font: "Arimo",
 };
 export const sty = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.bg },
-  body: { paddingHorizontal: 24, paddingBottom: 36, gap: 14 },
+  body: { paddingHorizontal: 20, paddingBottom: 32, gap: 16, width: '100%', maxWidth: 440, alignSelf: 'center' },
   heading: { fontFamily: theme.font, fontSize: 29, color: theme.text },
   title: { fontFamily: theme.font, fontSize: 22, color: theme.text },
   sub: {
@@ -26,7 +28,7 @@ export const sty = StyleSheet.create({
   },
   eyebrow: {
     fontFamily: theme.font,
-    fontSize: 11,
+    fontSize: 12,
     color: theme.peach,
     letterSpacing: 1.1,
   },
@@ -35,7 +37,7 @@ export const sty = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.line,
     borderRadius: theme.r.card,
-    padding: 17,
+    padding: 16,
   },
   row: { flexDirection: "row", alignItems: "center" },
   button: {
@@ -44,6 +46,7 @@ export const sty = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 18,
+    paddingVertical: 14,
     backgroundColor: theme.peach,
   },
   buttonText: {
