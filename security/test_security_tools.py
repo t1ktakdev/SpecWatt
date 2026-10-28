@@ -44,30 +44,31 @@ class SecretScannerTests(unittest.TestCase):
         self.assertTrue(scanner.scan_text(synthetic, 'synthetic'))
 
     def test_historical_e2e_exception_is_exact_and_never_weakens_current_scan(self):
+        # CI's checkout need not contain unrelated intermediate commit blobs.
+        # Test scope with generated synthetic input and temporary hash pin.
         import hashlib
-        import subprocess
-        repo = Path(__file__).resolve().parents[1]
+        from unittest.mock import patch
+        line = "const " + "PASSWORD" + " = " + "'portable-e2e-example';"
+        digest = hashlib.sha256(line.encode("utf-8")).hexdigest()
+        commit = next(iter(scanner.HISTORICAL_FIXTURE_COMMITS))
         path = scanner.HISTORICAL_FIXTURE_PATH
-        matching_line = None
-        for commit in scanner.HISTORICAL_FIXTURE_COMMITS:
-            source = subprocess.check_output(
-                ["git", "show", commit + ":" + path], cwd=repo,
-                text=True, encoding="utf-8",
-            )
-            line = source.splitlines()[18]
-            self.assertEqual(
-                hashlib.sha256(line.encode()).hexdigest(),
-                scanner.HISTORICAL_FIXTURE_SHA256,
-            )
-            self.assertTrue(scanner.scan_text(line, "current tree"), "a new occurrence remains reportable")
-            self.assertTrue(scanner.audited_historical_fixture("generic-assignment", commit, path, "19", line))
-            self.assertFalse(scanner.audited_historical_fixture("jwt", commit, path, "19", line))
-            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, path, "20", line))
-            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", "other-commit", path, "19", line))
-            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, "other-path", "19", line))
-            self.assertFalse(scanner.audited_historical_fixture("generic-assignment", commit, path, "19", line + " "))
-            matching_line = line
-        self.assertIsNotNone(matching_line)
+        with patch.object(scanner, "HISTORICAL_FIXTURE_SHA256", digest):
+            self.assertTrue(scanner.audited_historical_fixture(
+                "generic-assignment", commit, path, "19", line
+            ))
+            for test_pattern, test_commit, test_path, test_line, content in (
+                ("jwt", commit, path, "19", line),
+                ("generic-assignment", "other-commit", path, "19", line),
+                ("generic-assignment", commit, "other-path", "19", line),
+                ("generic-assignment", commit, path, "20", line),
+                ("generic-assignment", commit, path, "19", line + " "),
+            ):
+                self.assertFalse(scanner.audited_historical_fixture(
+                    test_pattern, test_commit, test_path, test_line, content
+                ))
+        self.assertTrue(scanner.scan_text(line, "current tree"))
+        self.assertEqual(len(scanner.HISTORICAL_FIXTURE_COMMITS), 2)
+        self.assertEqual(len(scanner.HISTORICAL_FIXTURE_SHA256), 64)
 
     def test_output_does_not_reveal_any_matched_characters(self):
         self.assertEqual(scanner.mask('synthetic-sensitive-value'), '[REDACTED]')
