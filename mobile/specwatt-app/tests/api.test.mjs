@@ -248,7 +248,7 @@ test("transport failure never retries and logout clears the local session despit
   assert.equal(vault.token, null);
 });
 
-test("request timeout aborts the single in-flight request", async () => {
+test("request timeout on a safe GET is retried exactly once, then reported", async () => {
   let requests = 0;
   const client = clientWith(
     (_url, options) =>
@@ -261,13 +261,13 @@ test("request timeout aborts the single in-flight request", async () => {
         );
       }),
     vaultWith("token"),
-    { timeoutMs: 10 },
+    { timeoutMs: 10, retryDelayMs: 1 },
   );
   await assert.rejects(
     () => client.controllers(),
     (error) => error.code === "request_timeout",
   );
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
 });
 
 test("CH3 is rejected locally before a network request", async () => {

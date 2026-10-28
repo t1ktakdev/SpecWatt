@@ -22,7 +22,9 @@ export type ScheduleEvaluation = {
   };
   suggestions: { start_at: number; end_at: number; projected_peak_watts: number }[];
 };
-export type SchedulerRequest = (path: string, method?: 'GET' | 'POST', body?: unknown) => Promise<unknown>;
+export type SchedulerRequest = (
+  path: string, method?: 'GET' | 'POST', body?: unknown, signal?: AbortSignal,
+) => Promise<unknown>;
 type Obj = Record<string, unknown>;
 const fail = (): never => { throw new ApiError('invalid_response'); };
 function object(value: unknown): Obj {
@@ -147,8 +149,8 @@ function ownedSchedule(value: unknown, cid: string) {
 }
 export function createSchedulerApi(request: SchedulerRequest) {
   return {
-    async list(cid: string): Promise<ServerSchedule[]> {
-      const rows = array(await request(path(cid) + '/schedules?limit=100'), 100)
+    async list(cid: string, signal?: AbortSignal): Promise<ServerSchedule[]> {
+      const rows = array(await request(path(cid) + '/schedules?limit=100', 'GET', undefined, signal), 100)
         .map(raw => ownedSchedule(raw, cid));
       if (new Set(rows.map(r => r.id)).size !== rows.length) return fail();
       return rows;

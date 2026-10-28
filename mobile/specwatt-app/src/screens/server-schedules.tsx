@@ -5,7 +5,7 @@ import { scheduleFromForm } from '../specwatt/scheduler-api';
 import type { ScheduleEvaluation, ScheduleInput, SchedulerApi, ServerSchedule } from '../specwatt/scheduler-api';
 import { Copy, CTA, Panel } from '../specwatt/ui';
 import { sty, theme } from '../specwatt/theme';
-import { isSessionFailure } from '../specwatt/server-request-scope';
+import { isSessionFailure, isAmbiguousMutationOutcome } from '../specwatt/server-request-scope';
 
 export type ServerSchedulesProps = {
   api: SchedulerApi;
@@ -44,8 +44,9 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
 
   useEffect(() => {
     const current = ++generation.current;
+    const abort = new AbortController();
     lock.current = true;
-    void api.list(controllerId).then(value => {
+    void api.list(controllerId, abort.signal).then(value => {
       if (generation.current === current) setRows(value);
     }).catch(failure => {
       if (generation.current === current) {
@@ -56,7 +57,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     }).finally(() => {
       if (generation.current === current) { lock.current = false; setBusy(false); }
     });
-    return () => { generation.current = current + 1; };
+    return () => { generation.current = current + 1; abort.abort(); };
   }, [api, controllerId]);
 
   async function perform(job: () => Promise<void>, mutation = false) {
@@ -69,7 +70,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
       const code = failure instanceof ApiError ? failure.code : 'operation_failed';
       if (isSessionFailure(code)) { expiredCallback.current(); return; }
       setError(code);
-      if (mutation && (['request_timeout', 'network_error', 'invalid_response', 'unsupported_source', 'operation_failed'].includes(code) || /^http_5/.test(code))) setUncertain(true);
+      if (mutation && isAmbiguousMutationOutcome(code)) setUncertain(true);
     } finally {
       if (generation.current === current) { lock.current = false; setBusy(false); }
     }
@@ -103,6 +104,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     invalid_time_window: w('Сервер отклонил время окна.', 'Сервер графиктин убактысын четке какты.'),
     schedule_not_active: w('Расписание уже завершено. Обновите список.', 'График аяктаган. Тизмени жаңыртыңыз.'),
     schedule_not_found: w('Расписание не найдено. Обновите список.', 'График табылган жок. Тизмени жаңыртыңыз.'),
+    controller_not_found: w('Симулятор не найден или удалён на сервере. Обновите список симуляторов.', 'Симулятор табылган жок же серверден өчүрүлгөн. Симуляторлор тизмесин жаңыртыңыз.'),
     request_timeout: w('Ответ не получен. Обновите список перед новым действием.', 'Жооп келген жок. Жаңы аракеттен мурда тизмени жаңыртыңыз.'),
     network_error: w('Нет связи. Обновите список после восстановления сети.', 'Байланыш жок. Тармак калыбына келгенде тизмени жаңыртыңыз.'),
     invalid_response: w('Сервер вернул некорректные данные. Обновите список.', 'Сервер туура эмес маалымат кайтарды. Тизмени жаңыртыңыз.'),
