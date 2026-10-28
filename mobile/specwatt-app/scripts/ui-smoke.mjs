@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+import {t} from '../src/specwatt/i18n.ts';
+const require=createRequire(import.meta.url);
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const browser=await chromium.launch({headless:true,channel:'msedge'});
+const results=[];
+try {
+ for(const locale of ['ru','ky']) {
+  const context=await browser.newContext({viewport:{width:360,height:800},reducedMotion:'reduce'});
+  const page=await context.newPage(),errors=[],requests=[];
+  page.on('pageerror',e=>errors.push(String(e)));
+  page.on('request',r=>{if(/\/api\//.test(r.url()))requests.push(r.url());});
+  await page.goto('http://localhost:8097/');
+  await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
+  await page.getByRole('button',{name:locale==='ru'?'Русский':'Кыргызча',exact:true}).click();
+  await page.getByRole('button',{name:t(locale,'next'),exact:true}).click();
+  await page.getByRole('button',{name:t(locale,'demo'),exact:true}).click();
+  await page.getByRole('tab').first().waitFor();
+  const stored=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('specwatt-mobile-v1')));
+  const initial=await stored(),ch1=initial.channels.find(c=>c.id==='CH1');
+  const toggle=page.getByRole('switch',{name:`${locale==='ru'?'Переключить':'Которуу'} ${ch1.assigned.name}`,exact:true});
+  await toggle.click();
+  await page.waitForFunction(n=>JSON.parse(localStorage.getItem('specwatt-mobile-v1')).events.length===n,initial.events.length+1);
+  assert.equal(new URL(page.url()).pathname,'/home');
+  assert.equal((await stored()).channels.find(c=>c.id==='CH1').watts,0);
+  assert.equal(await page.getByRole('switch').count(),2,'CH3 has no control');
+  const gradients=await page.locator('svg defs [id]').evaluateAll(nodes=>nodes.map(n=>n.id));
+  assert.equal(new Set(gradients).size,gradients.length,'SVG gradient ids must be unique');
+  assert.equal(await page.locator('img').count(),0,'default demo should contain vectors only');
+  await page.getByRole('button',{name:`${ch1.assigned.name} · ${locale==='ru'?'Подробнее':'Кененирээк'}`,exact:true}).click();
+  await page.waitForURL('**/device?id=CH1');
+  await page.getByRole('button',{name:locale==='ru'?'Назад':'Артка',exact:true}).click();
+  assert.equal(new URL(page.url()).pathname,'/home');
+  await page.getByRole('tab',{name:locale==='ru'?'Устройства':'Түзмөктөр',exact:true}).click();
+  await page.getByRole('button',{name:locale==='ru'?'Защищённые':'Корголгон',exact:true}).click();
+  assert.equal(await page.getByRole('switch').count(),0);
+  await page.getByRole('tab',{name:'Журнал',exact:true}).click();
+  await page.getByRole('button',{name:locale==='ru'?'Ошибки':'Каталар',exact:true}).click();
+  await page.getByText(locale==='ru'?'В этом фильтре нет событий':'Бул чыпкада окуялар жок',{exact:true}).waitFor();
+  await page.goto('http://localhost:8097/setup');
+  await page.getByRole('button',{name:t(locale,'configureCurrent'),exact:true}).click();
+  await page.getByRole('button',{name:`CH1 · ${ch1.assigned.name}`,exact:true}).click();
+  await page.getByRole('button',{name:t(locale,'svgCatalog'),exact:true}).click();
+  await page.getByRole('button',{name:locale==='ru'?'Использовать для CH1':'CH1 үчүн колдонуу',exact:true}).click();
+  await page.getByRole('button',{name:t(locale,'finish'),exact:true}).click();
+  await page.getByRole('button',{name:t(locale,'toDevices'),exact:true}).click();
+  await page.waitForURL('**/devices');
+  await page.reload();
+  await page.getByRole('tab').first().waitFor();
+  const saved=await stored();
+  assert.equal(saved.locale,locale);
+  assert.equal(saved.channels[0].assigned.appearance.kind,'vector');
+  assert.equal(saved.channels[0].assigned.name,ch1.assigned.name);
+  assert.equal(saved.channels[2].assigned.allowAuto,false);
+  assert.equal(saved.channels[2].protected,true);
+  assert.equal(requests.length,0,'offline demo must never call the API');
+  assert.deepEqual(errors,[]);
+  results.push({locale,passed:['onboarding','locale','demo','single toggle without navigation','CH3 read-only','unique SVG gradients','vector defaults','detail/back','device filter','journal filtered empty','catalog/setup/save','reload preserves vector/name/locale','no API transport'],errors});
+  await context.close();
+ }
+ // A separate profile proves the empty onboarding route without erasing user data.
+ const context=await browser.newContext({viewport:{width:320,height:700}}),page=await context.newPage();
+ await page.goto('http://localhost:8097/');
+ await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
+ await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
+ await page.getByRole('button',{name:t('ru','empty'),exact:true}).click();
+ await page.getByText('Нет подключённых каналов',{exact:true}).waitFor();
+ await page.reload();
+ await page.getByText('Нет подключённых каналов',{exact:true}).waitFor();
+ results.push({locale:'ru',passed:['none mode','empty state persists after reload']});
+ await context.close();
+} finally {
+ await browser.close();
+ fs.writeFileSync('outputs/ui-qa/smoke.json',JSON.stringify(results,null,2));
+}
+console.log(JSON.stringify(results));
