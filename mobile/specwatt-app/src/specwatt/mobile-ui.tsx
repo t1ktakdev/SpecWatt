@@ -188,12 +188,17 @@ const nav = [
   ["/plan", "calendar", "План", "План"],
   ["/journal", "journal", "Журнал", "Журнал"],
 ] as const;
-function BottomNav({ active }: { active?: string }) {
-  const {width}=useWindowDimensions();
+export function BottomNav({ active }: { active?: string }) {
+  const {width,fontScale}=useWindowDimensions();
+  const large=fontScale>1.2;
+
   const path = usePathname(),
     w = useWords();
+  const current=nav.find(item=>item[0]===(active||path))||nav[0];
   return (
-    <View style={[s.nav,{width:Math.min(width,440)-(width<360?32:40)}]}>
+    <View style={[s.nav,{width:Math.min(width,440)-(width<360?32:40),flexDirection:"column"}]}>
+      {large&&<Copy size={14} accent style={{textAlign:"center",paddingBottom:4}}>{w(current[2],current[3])}</Copy>}
+      <View style={{flexDirection:"row"}}>
       {nav.map(([href, icon, ru, ky]) => {
         const selected = (active || path) === href;
         return (
@@ -212,7 +217,7 @@ function BottomNav({ active }: { active?: string }) {
                 size={23}
               />
             </AnimatedSelection>
-            <Copy
+            {!large&&<Copy
               size={12}
               style={{
                 fontSize: 12,
@@ -222,11 +227,12 @@ function BottomNav({ active }: { active?: string }) {
                 textAlign: "center",
               }}
             >
-              {w(ru, ky)}
-            </Copy>
+              {width<360?(href==="/devices"?w("Техника","Түзмөк"):href==="/autopilot"?w("Авто","Авто"):w(ru,ky)):w(ru,ky)}
+            </Copy>}
           </Pressable>
         );
       })}
+      </View>
     </View>
   );
 }
@@ -381,7 +387,7 @@ export function HistoryChart({channelId}:{channelId?:ChannelId}={}) {
  const {data}=useSpec(),w=useWords();
  const [details,setDetails]=useState(false),[available,setAvailable]=useState(320);
  const {fontScale}=useWindowDimensions();
- const width=Math.max(available,280*fontScale),fontSize=12*fontScale;
+ const width=Math.max(available,240*fontScale),fontSize=12*fontScale;
  const history=useMemo(()=>data.source==='demo'&&data.channels.length===3?createDemoHistory(data.channels):null,[data.source,data.channels]);
  if(!history)return <Card><Copy muted>{w('История измерений пока недоступна','Өлчөөлөрдүн тарыхы азырынча жок')}</Copy></Card>;
  const samples=channelId?history.byChannel[channelId]:history.samples;

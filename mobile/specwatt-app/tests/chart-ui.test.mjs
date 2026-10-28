@@ -13,7 +13,7 @@ function harness(fontScale) {
   react:{createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:x=>[x,()=>{}],useMemo:fn=>fn()},
   'react-native':{View:'View',ScrollView:'ScrollView',StyleSheet:{create:x=>x},useWindowDimensions:()=>({width:320,fontScale})},
   'react-native-reanimated':{}, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},
-  'expo-router':{},'expo-linear-gradient':{},
+  'expo-router':{usePathname:()=>'/devices'},'expo-linear-gradient':{},
   'react-native-svg':{default:'Svg',__esModule:true,Path:'Path',Circle:'Circle',Line:'Line',Text:'SvgLabel'},
   './motion':{ChartBar:'Bar'},'./motion-tokens':{},'./ui':{Copy:'Copy'},
   './theme':{theme:{r:{card:20}}},'./store':{useSpec:()=>({data:demoState()})},
@@ -36,7 +36,16 @@ for(const scale of [1,1.5,2]) {
     assert.ok(label.props.fontSize>=12*scale);
     assert.ok(label.props.y<=svg.props.height);
    }
-   assert.ok(svg.props.width>=280*scale);
+   assert.ok(svg.props.width>=240*scale);
   }
  });
 }
+test('narrow navigation has readable short labels; large text gets one full-width selected label',()=>{
+ for(const scale of [1,1.5,2]) {
+  const {exports,flatten}=harness(scale);
+  const nodes=flatten(exports.BottomNav({active:'/devices'}));
+  const labels=nodes.filter(n=>n.type==='Copy').map(n=>n.props.children.flat().join(''));
+  assert.deepEqual(labels,scale===1?['Главная','Техника','Авто','План','Журнал']:['Устройства']);
+  assert.equal(nodes.filter(n=>n.props?.accessibilityRole==='tab').length,5);
+ }
+});
