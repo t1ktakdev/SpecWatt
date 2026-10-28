@@ -59,7 +59,7 @@ test('all SVG gradient offsets use Android-compatible numeric or percentage valu
   for (const offset of offsets) assert.match(offset, /^(?:0(?:\.\d+)?|1(?:\.0+)?|\d+(?:\.\d+)?%)$/, offset);
 });
 
-test('device visuals retain bundled photos unless an explicit appearance is chosen', () => {
+test('device visuals use SVG unless an explicit owned photo is chosen', () => {
   const react = {useState: () => ['', () => {}], createElement: (type, props, ...children) => ({type, props: {...props, children}})};
   const mocks = {
     react, 'react-native': {Image: 'Image', View: 'View'},
@@ -74,8 +74,7 @@ test('device visuals retain bundled photos unless an explicit appearance is chos
   const exports = {};
   vm.runInNewContext(code, {exports, require: name => mocks[name]});
   const render = assigned => exports.DeviceVisual({assignment: assigned, id: 'CH1'}).props.children.at(-1);
-  assert.equal(render({image: 'lamp'}).type, 'Image');
-  assert.equal(render({image: 'lamp'}).props.source, 123);
+  assert.equal(render({image: 'lamp'}).type, 'Vector');
   assert.equal(render({image: 'lamp', appearance: {kind: 'vector', config: {categoryId: 'fan'}}}).type, 'Vector');
   assert.equal(render({image: 'lamp', appearance: {kind: 'photo', uri: 'file:///owned.jpg'}}).props.source.uri, 'file:///owned.jpg');
   assert.equal(render({image: 'lamp', appearance: {kind: 'photo', uri: 'file:///missing.jpg'}}).type, 'Vector');
