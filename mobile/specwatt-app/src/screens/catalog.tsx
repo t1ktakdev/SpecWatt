@@ -57,6 +57,12 @@ function parseInitial(raw: unknown) {
   }
 }
 
+/** The web renderer drops accessibilityState.selected for buttons, so the
+ * selected state must also live in the accessible name itself. */
+function chosen(base: string, on: boolean, w: (ru: string, ky: string) => string) {
+  return on ? base + w(", выбрано", ", тандалды") : base;
+}
+
 /** Virtualized catalogue and offline constructor. Selection has no device capability effects. */
 export function CatalogScreen() {
   const params = useLocalSearchParams<{
@@ -149,7 +155,9 @@ export function CatalogScreen() {
               <View
                 style={{
                   flexDirection: "row",
+                  flexWrap: "wrap",
                   justifyContent: "space-between",
+                  rowGap: 8,
                   gap: 8,
                 }}
               >
@@ -161,9 +169,10 @@ export function CatalogScreen() {
                   <Pressable
                     key={color}
                     accessibilityRole="button"
-                    accessibilityLabel={w(
-                      colorNames[color][0],
-                      colorNames[color][1],
+                    accessibilityLabel={chosen(
+                      w(colorNames[color][0], colorNames[color][1]),
+                      config.color === color,
+                      w,
                     )}
                     accessibilityState={{ selected: config.color === color }}
                     onPress={() => setConfig((c) => ({ ...c, color }))}
@@ -206,6 +215,13 @@ export function CatalogScreen() {
                     key={v}
                     onPress={() => setConfig((c) => ({ ...c, variant: v }))}
                     accessibilityRole="button"
+                    accessibilityLabel={chosen(
+                      v === "rounded"
+                        ? w("Мягкий корпус", "Жумшак корпус")
+                        : w("Строгий корпус", "Так корпус"),
+                      config.variant === v,
+                      w,
+                    )}
                     accessibilityState={{ selected: config.variant === v }}
                     style={[
                       styles.choice,
@@ -226,6 +242,13 @@ export function CatalogScreen() {
                     key={details}
                     onPress={() => setConfig((c) => ({ ...c, details }))}
                     accessibilityRole="button"
+                    accessibilityLabel={chosen(
+                      details === "detailed"
+                        ? w("С деталями", "Деталдары менен")
+                        : w("Спокойный вариант", "Жөнөкөй вариант"),
+                      config.details === details,
+                      w,
+                    )}
                     accessibilityState={{
                       selected: config.details === details,
                     }}
@@ -268,6 +291,7 @@ export function CatalogScreen() {
                     key={g.id || "all"}
                     onPress={() => setGroup(g.id)}
                     accessibilityRole="button"
+                    accessibilityLabel={chosen(w(g.ru, g.ky), group === g.id, w)}
                     accessibilityState={{ selected: group === g.id }}
                     style={[styles.group, group === g.id && styles.selected]}
                   >
@@ -295,7 +319,11 @@ export function CatalogScreen() {
               onPress={() => setConfig((c) => ({ ...c, categoryId: item.id }))}
               accessibilityRole="button"
               accessibilityState={{ selected: config.categoryId === item.id }}
-              accessibilityLabel={w(item.ru, item.ky)}
+              accessibilityLabel={chosen(
+                w(item.ru, item.ky),
+                config.categoryId === item.id,
+                w,
+              )}
               style={[
                 styles.tile,
                 config.categoryId === item.id && styles.selected,

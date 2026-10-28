@@ -92,42 +92,51 @@ export async function importDevicePhoto(): Promise<string | null> {
       rendered.height > OUTPUT_PHOTO_SIDE
     )
       throw new PhotoError("photo-invalid");
-    const saved = await rendered.saveAsync({
-      format: SaveFormat.JPEG,
-      compress: 0.86,
-      base64: false,
-    });
-    temporaryUri = saved.uri;
-    if (!isLocalPhotoInputUri(saved.uri))
-      throw new PhotoError("photo-write-failed");
-    const prepared = new File(saved.uri);
-    if (
-      !prepared.exists ||
-      prepared.size <= 0 ||
-      prepared.size > MAX_PHOTO_BYTES
-    )
-      throw new PhotoError("photo-write-failed");
-    const own = directory();
-    own.create({ intermediates: true, idempotent: true });
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const stamp = Date.now().toString(36);
-      const suffix = (
-        Math.random().toString(36).slice(2, 12) + (nameSequence++).toString(36)
-      ).padEnd(12, "0");
-      const candidate = new File(own, `photo-${stamp}-${suffix}.jpg`);
-      if (!candidate.exists) {
-        destination = candidate;
-        break;
+    // Stage boundary: the source was read and decoded. Everything below is
+    // output production or destination write, so an untyped native failure
+    // here is photo-write-failed, not photo-read-failed. PhotoErrors keep
+    // their code and no native text or user URI ever leaks into the message.
+    try {
+      const saved = await rendered.saveAsync({
+        format: SaveFormat.JPEG,
+        compress: 0.86,
+        base64: false,
+      });
+      temporaryUri = saved.uri;
+      if (!isLocalPhotoInputUri(saved.uri))
+        throw new PhotoError("photo-write-failed");
+      const prepared = new File(saved.uri);
+      if (
+        !prepared.exists ||
+        prepared.size <= 0 ||
+        prepared.size > MAX_PHOTO_BYTES
+      )
+        throw new PhotoError("photo-write-failed");
+      const own = directory();
+      own.create({ intermediates: true, idempotent: true });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const stamp = Date.now().toString(36);
+        const suffix = (
+          Math.random().toString(36).slice(2, 12) + (nameSequence++).toString(36)
+        ).padEnd(12, "0");
+        const candidate = new File(own, `photo-${stamp}-${suffix}.jpg`);
+        if (!candidate.exists) {
+          destination = candidate;
+          break;
+        }
       }
+      if (!destination || !isOwnedPhotoUri(destination.uri))
+        throw new PhotoError("photo-write-failed");
+      await prepared.copy(destination);
+      if (!devicePhotoExists(destination.uri))
+        throw new PhotoError("photo-write-failed");
+      const uri = destination.uri;
+      destination = undefined;
+      return uri;
+    } catch (error) {
+      if (error instanceof PhotoError) throw error;
+      throw new PhotoError("photo-write-failed");
     }
-    if (!destination || !isOwnedPhotoUri(destination.uri))
-      throw new PhotoError("photo-write-failed");
-    await prepared.copy(destination);
-    if (!devicePhotoExists(destination.uri))
-      throw new PhotoError("photo-write-failed");
-    const uri = destination.uri;
-    destination = undefined;
-    return uri;
   } catch (error) {
     if (destination && isOwnedPhotoUri(destination.uri)) {
       try {
