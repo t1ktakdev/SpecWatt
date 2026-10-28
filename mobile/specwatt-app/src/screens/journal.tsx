@@ -10,6 +10,7 @@ import {
   Icon,
   IconName,
   useWords,
+  Card,
 } from "../specwatt/mobile-ui";
 
 function eventText(e: JournalEvent, w: (ru: string, ky: string) => string) {
@@ -96,12 +97,11 @@ export function JournalScreen() {
         {w("События", "Окуялар")}
       </Copy>
       {!events.length && (
-        <Copy muted>
-          {w(
-            "Событий пока нет. Действия в приложении появятся здесь.",
-            "Окуялар азырынча жок. Колдонмодогу аракеттер бул жерде көрсөтүлөт.",
-          )}
-        </Copy>
+        <Card style={{gap:12}}>
+          <Icon name={filter?"filter":"journal"} color={theme.peach} size={28}/>
+          <Copy size={20}>{filter?w("В этом фильтре нет событий","Бул чыпкада окуялар жок"):w("История начинается здесь","Тарых ушул жерден башталат")}</Copy>
+          <Copy muted>{filter?w("Выберите «Все», чтобы увидеть остальные события.","Калган окуялар үчүн «Баары» чыпкасын тандаңыз."):w("Ваши действия и решения автопилота появятся здесь. Физические команды в демо не отправляются.","Аракеттериңиз жана автопилоттун чечимдери бул жерде көрсөтүлөт. Демодо жабдууга буйрук жөнөтүлбөйт.")}</Copy>
+        </Card>
       )}
       {events.map((e) => {
         const error = e.kind === "error",
@@ -126,7 +126,7 @@ export function JournalScreen() {
         return (
           <View
             key={e.id}
-            style={{ flexDirection: "row", gap: 19, minHeight: 133 }}
+            style={{ flexDirection: "row", gap: 19, minHeight: 128 }}
           >
             <View style={{ width: 49, alignItems: "center" }}>
               <View
@@ -159,7 +159,7 @@ export function JournalScreen() {
                 {when}
                 {e.channelId ? ` · ${e.channelId}` : ""}
               </Copy>
-              <Copy size={21}>{eventText(e, w)}</Copy>
+              <Copy size={20}>{eventText(e, w)}</Copy>
               <Copy muted size={14}>
                 {e.code === "plan-applied"
                   ? `${e.details?.from} → ${e.details?.to}`

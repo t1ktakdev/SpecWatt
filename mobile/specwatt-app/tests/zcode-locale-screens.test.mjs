@@ -133,7 +133,7 @@ test('KY onboarding welcome page shows Kyrgyz feature badges, never Russian ones
   const tree = render();
   const text = treeText(tree);
   assert.ok(text.includes('Жүктөм'), 'KY badge "Жүктөм" must render');
-  assert.ok(text.includes('Баары иштейт'), 'KY welcome title must render');
+  assert.ok(text.includes(i18n.t('ky', 'welcomeTitle1')), 'KY welcome title must render');
   assert.ok(!text.includes('Нагрузка'), 'hardcoded Russian badge leaked into KY onboarding');
   assert.ok(!text.includes('Всё работает'), 'hardcoded Russian title leaked into KY onboarding');
 });
@@ -164,7 +164,7 @@ test('login form inputs carry accessibility labels and errors are announced', ()
   const store = storeBase();
   const { render, states } = indexHarness(store);
   let tree = render();
-  find(tree, (n) => isType('CTA')(n) && n.props.label === i18n.t('ky', 'loginUnavailable')).props.onPress();
+  find(tree, (n) => isType('Pressable')(n) && n.props.accessibilityLabel === i18n.t('ky', 'loginUnavailable')).props.onPress();
   tree = render();
   const labels = findAll(tree, isType('TextInput')).map((n) => n.props.accessibilityLabel);
   assert.ok(labels.includes(i18n.t('ky', 'email')), 'email input needs a label');
