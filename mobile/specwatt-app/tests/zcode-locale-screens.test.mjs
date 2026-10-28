@@ -389,7 +389,7 @@ test('settings renders fully in Kyrgyz without per-screen word helpers', () => {
   assert.ok(!text.includes('Язык интерфейса'), 'Russian language label leaked under KY');
 });
 
-test('language chips meet the 44dp press target and expose selected state', () => {
+test('language chips meet the 48dp press target and expose selected state', () => {
   const setLocale = [];
   const store = {
     data: { locale: 'ky', source: 'demo', peak: 7, manualMinutes: 30 },
@@ -403,10 +403,10 @@ test('language chips meet the 44dp press target and expose selected state', () =
   assert.equal(kyChip.props.accessibilityState.selected, true);
   const heights = chips.map((c) =>
     (Array.isArray(c.props.style) ? c.props.style : [c.props.style]).some(
-      (part) => part && part.minHeight >= 44,
+      (part) => part && part.minHeight >= 48,
     ),
   );
-  assert.deepEqual(heights, [true, true], 'both chips need a >=44dp press target');
+  assert.deepEqual(heights, [true, true], 'both chips need a >=48dp press target');
   const ruChip = chips.find((c) => treeText(c).includes('Русский'));
   ruChip.props.onPress();
   assert.deepEqual(setLocale, ['ru']);
