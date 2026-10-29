@@ -13,7 +13,7 @@ function mount(locale){
   createElement:(type,props,...children)=>({type,props:{...props,children}})};
  const mocks={react,'react-native':{ActivityIndicator:'Busy',KeyboardAvoidingView:'Keyboard',Platform:{OS:'web'},Pressable:'Pressable',ScrollView:'Scroll',TextInput:'Input',View:'View'},
   'react-native-safe-area-context':{SafeAreaView:'Safe'},'expo-router':{router:{}},
-  '../specwatt/api':api,'../specwatt/ui':{Copy:'Copy',CTA:'CTA',Panel:'Panel'},
+  '../specwatt/live-context':{defaultServerUrl:()=> 'http://localhost:8000',useLive:()=>({workspace:{},state:{client:null,controllers:[],busy:false,error:''}})},'../specwatt/api':api,'../specwatt/ui':{Copy:'Copy',CTA:'CTA',Panel:'Panel'},
   '../specwatt/theme':{theme:{},sty:{}},'../specwatt/store':{useSpec:()=>({data:{locale}})},
   './server-schedules':{},'../specwatt/server-request-scope':scope,'../specwatt/i18n':{t}};
  const exports={};

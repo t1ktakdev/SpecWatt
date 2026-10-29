@@ -154,8 +154,11 @@ class MobileStaticSecurityTests(unittest.TestCase):
 
     def test_logout_revokes_server_side_then_clears_local_state(self):
         server_text = self.sources[Path("src/screens/server.tsx")]
-        self.assertIn("await client.logout()", server_text)
-        self.assertIn("clearSession()", server_text)
+        workspace = self.sources[Path("src/specwatt/live-workspace.ts")]
+        self.assertIn("workspace.logout()", server_text)
+        self.assertIn('clear("unconfigured")', workspace)
+        self.assertIn("await connection?.logout()", workspace)
+        self.assertIn("scope.invalidate()", workspace)
         self.assertIn('setPassword("")', server_text)
 
     def test_offline_demo_and_server_transport_stay_separated(self):
@@ -176,7 +179,7 @@ class MobileStaticSecurityTests(unittest.TestCase):
         self.assertIn("AbortController", self.api_text)
 
     def test_dev_http_targets_are_loopback_or_emulator_only(self):
-        server_text = self.sources[Path("src/screens/server.tsx")]
+        server_text = self.sources[Path("src/specwatt/live-context.tsx")]
         self.assertIn("10.0.2.2:8000", server_text)
         self.assertIn("127.0.0.1:8000", server_text)
         self.assertIn("https://localhost:8000", server_text)

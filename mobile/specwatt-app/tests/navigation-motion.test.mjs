@@ -10,7 +10,7 @@ test('Reduce Motion disables root and detail/catalog transitions immediately',()
   const mocks={react:{createElement:(type,props,...children)=>({type,props:{...props,children}})},
    'react-native-gesture-handler':{},'../specwatt/motion':{useMotion:()=>reduced},
    '../specwatt/motion-tokens':{motion:{duration:{standard:200}}},'expo-router':{Stack},'expo-font':{},
-   'react-native':{},'expo-splash-screen':{preventAutoHideAsync:()=>Promise.resolve()},'../specwatt/store':{},'../specwatt/theme':{theme:{}},
+   'react-native':{},'expo-splash-screen':{preventAutoHideAsync:()=>Promise.resolve()},'../specwatt/live-context':{LiveProvider:'LiveProvider'},'../specwatt/store':{},'../specwatt/theme':{theme:{}},
   };
   const code=ts.transpileModule(fs.readFileSync(new URL('../src/app/_layout.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText;
   vm.runInNewContext(code,{exports,require:n=>{if(!mocks[n])throw Error(n);return mocks[n];}});

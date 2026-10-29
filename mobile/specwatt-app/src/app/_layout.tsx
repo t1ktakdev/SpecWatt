@@ -7,6 +7,7 @@ import { useFonts } from "expo-font";
 import { AccessibilityInfo, Animated, Text, View } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { SpecProvider } from "../specwatt/store";
+import { LiveProvider } from "../specwatt/live-context";
 import { theme } from "../specwatt/theme";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -66,7 +67,7 @@ export default function Layout() {
   if (!loaded && !fontError && !timedOut)
     return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
   return (
-    <GestureHandlerRootView style={{flex:1}}><MotionProvider><SpecProvider>
+    <GestureHandlerRootView style={{flex:1}}><MotionProvider><SpecProvider><LiveProvider>
       <View style={{ flex: 1, backgroundColor: theme.bg }}>
         <AppNavigation />
         {!complete && (
@@ -120,7 +121,7 @@ export default function Layout() {
           </Animated.View>
         )}
       </View>
-    </SpecProvider></MotionProvider></GestureHandlerRootView>
+    </LiveProvider></SpecProvider></MotionProvider></GestureHandlerRootView>
   );
 }
 

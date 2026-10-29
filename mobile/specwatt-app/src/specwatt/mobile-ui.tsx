@@ -113,10 +113,12 @@ export function useWords() {
 export function Shell({
   children,
   active,
+  demoEvents = true,
 }: {
   children: React.ReactNode;
   active?: string;
   header?: boolean;
+  demoEvents?: boolean;
 }) {
   const { data, ready, storageError } = useSpec();
   const { width } = useWindowDimensions();
@@ -158,7 +160,7 @@ export function Shell({
             </View>
           )}
 
-          {data.events[0]?.kind === "error" && (
+          {demoEvents && data.events[0]?.kind === "error" && (
             <View accessibilityRole="alert" style={s.warning}>
               <Copy size={13}>
                 {data.events[0].code === "peak-exceeded"
