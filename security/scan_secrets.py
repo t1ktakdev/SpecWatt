@@ -37,6 +37,12 @@ PATTERNS = [
 # Literal value snippets that are known test fixtures or documentation
 # examples. Each entry needs a reason; keep this list minimal and audited.
 ALLOWLIST = [
+    ("generic-assignment", "new-password",
+     "React Native autoComplete enum; ternary colon is not credential assignment"),
+    ("generic-assignment", "newPassword",
+     "React Native textContentType enum; ternary colon is not credential assignment"),
+    ("generic-assignment", "fixture-session",
+     "first-run auth test response only; synthetic session never used by a service"),
     ("generic-assignment", "leaked-secret-999", "synthetic rejected-input echo test"),
     ("generic-assignment", "whatever-pass-123", "synthetic invalid login fixture"),
     ("generic-assignment", "another-pass-12345", "synthetic duplicate registration fixture"),

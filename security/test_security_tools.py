@@ -39,6 +39,16 @@ class AuditGateTests(unittest.TestCase):
 
 
 class SecretScannerTests(unittest.TestCase):
+    def test_autofill_hints_and_first_run_fixture_are_exact_nonsecret_literals(self):
+        hints = 'autoComplete={mode === "login" ? "current-password" : "new-password"}'
+        content_type = 'textContentType={mode === "login" ? "password" : "newPassword"}'
+        fixture = "access_" + "token:" + repr('fixture-session')
+        for example in (hints, content_type, fixture):
+            self.assertEqual(scanner.scan_text(example, 'audited-source-literal'), [])
+        for value in ('new-password-UNREVIEWED', 'newPassword-UNREVIEWED', 'fixture-session-UNREVIEWED'):
+            synthetic = 'pass' + 'word=' + repr(value)
+            self.assertTrue(scanner.scan_text(synthetic, 'unreviewed'))
+
     def test_allowlist_does_not_exempt_a_real_value_with_fixture_prefix(self):
         synthetic = ''.join(('pass', 'word=')) + chr(34) + 'correct-horse-battery-UNREVIEWED' + chr(34)
         self.assertTrue(scanner.scan_text(synthetic, 'synthetic'))
