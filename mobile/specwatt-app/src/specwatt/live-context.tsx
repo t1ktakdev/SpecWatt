@@ -31,15 +31,17 @@ export function useLivePolling() {
   const {workspace,state}=useLive();
   useFocusEffect(useCallback(()=>{
     if(state.kind!=="server-simulator"||!state.selectedId)return;
-    let timer: ReturnType<typeof setTimeout> | undefined, stopped=false;
+    let timer: ReturnType<typeof setTimeout> | undefined, stopped=false, epoch=0;
     const active=()=>AppState.currentState===null||AppState.currentState==="active";
     const tick=async()=>{
       if(stopped||!active())return;
+      const cycle=epoch;
       await workspace.refresh();
-      if(!stopped&&active())timer=setTimeout(tick,LIVE_POLL_MS);
+      if(!stopped&&active()&&cycle===epoch)timer=setTimeout(tick,LIVE_POLL_MS);
     };
     void tick();
     const listener=AppState.addEventListener("change",next=>{
+      epoch++;
       clearTimeout(timer);workspace.cancelReads();
       if(next==="active")void tick();
     });
