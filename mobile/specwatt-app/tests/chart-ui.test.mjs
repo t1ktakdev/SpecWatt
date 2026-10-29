@@ -9,8 +9,9 @@ import {createDemoHistory,integratePower} from '../src/specwatt/energy.ts';
 
 function harness(fontScale, locale='ru') {
  const exports={};
+ let wrapped=false;
  const mocks={
-  react:{createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:x=>[x,()=>{}],useMemo:fn=>fn()},
+  react:{createElement:(type,props,...children)=>({type,props:{...props,children}}),useState:x=>[wrapped||x,v=>{wrapped=v;}],useMemo:fn=>fn()},
   'react-native':{View:'View',ScrollView:'ScrollView',StyleSheet:{create:x=>x},useWindowDimensions:()=>({width:320,fontScale})},
   'react-native-reanimated':{}, 'react-native-safe-area-context':{SafeAreaView:'SafeAreaView'},
   'expo-router':{usePathname:()=>'/devices'},'expo-linear-gradient':{},
@@ -58,4 +59,12 @@ test('narrow navigation has readable short labels; large text gets one full-widt
   assert.deepEqual(labels,scale===1?['Главная','Техника','Авто','План','Журнал']:['Устройства']);
   assert.equal(nodes.filter(n=>n.props?.accessibilityRole==='tab').length,5);
  }
+});
+test('browser zoom that wraps a tab label switches to one full selected label without losing five accessible tabs',()=>{
+ const {exports,flatten}=harness(1);
+ let nodes=flatten(exports.BottomNav({active:'/devices'}));
+ nodes.find(n=>n.type==='Copy').props.onLayout({nativeEvent:{layout:{height:32}}});
+ nodes=flatten(exports.BottomNav({active:'/devices'}));
+ assert.deepEqual(nodes.filter(n=>n.type==='Copy').map(n=>n.props.children.flat().join('')),['Устройства']);
+ assert.equal(nodes.filter(n=>n.props?.accessibilityRole==='tab'&&n.props.accessibilityLabel).length,5);
 });

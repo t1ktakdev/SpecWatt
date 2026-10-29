@@ -192,7 +192,8 @@ const nav = [
 ] as const;
 export function BottomNav({ active }: { active?: string }) {
   const {width,fontScale}=useWindowDimensions();
-  const large=fontScale>1.2;
+  const [labelsWrap,setLabelsWrap]=useState(false);
+  const large=fontScale>1.2||labelsWrap;
 
   const path = usePathname(),
     w = useWords();
@@ -221,6 +222,7 @@ export function BottomNav({ active }: { active?: string }) {
             </AnimatedSelection>
             {!large&&<Copy
               size={12}
+              onLayout={event=>{if(event.nativeEvent.layout.height>22)setLabelsWrap(true);}}
               style={{
                 fontSize: 12,
                 lineHeight: 16,
