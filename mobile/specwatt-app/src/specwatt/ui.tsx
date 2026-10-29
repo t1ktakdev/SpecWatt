@@ -1,12 +1,13 @@
+import { MotionPressable as Pressable } from './motion';
 import React from "react";
 import {
-  Pressable,
   Text,
   View,
   ViewStyle,
   Image,
   ImageSourcePropType,
   TextProps,
+  StyleSheet,
 } from "react-native";
 import { sty, theme } from "./theme";
 export function Copy({
@@ -22,15 +23,18 @@ export function Copy({
   muted?: boolean;
   accent?: boolean;
 }) {
+  const resolved = StyleSheet.flatten(style);
+  const fontSize = resolved?.fontSize ?? Math.max(12, size);
   return (
     <Text
       {...props}
       style={[
         {
           fontFamily: theme.font,
-          fontSize: Math.max(12, size),
+          fontSize,
           color: accent ? theme.peach : muted ? theme.muted : theme.text,
-          lineHeight: Math.max(12, size) * 1.34,
+          lineHeight: Math.ceil(fontSize * 1.4),
+          fontVariant: ['tabular-nums'],
         },
         style,
       ]}
@@ -54,6 +58,7 @@ export function CTA({
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
+      accessibilityState={{disabled}}
       onPress={onPress}
       style={({ pressed }) => [
         sty.button,
@@ -68,7 +73,7 @@ export function CTA({
     >
       <Copy
         size={16}
-        style={{ color: secondary ? theme.text : theme.ink, fontWeight: "700" }}
+        style={{ color: secondary ? theme.text : theme.ink, fontWeight: "700", textAlign: 'center' }}
       >
         {label}
       </Copy>

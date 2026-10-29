@@ -263,3 +263,30 @@ test("schedule input validates time and preserves old schedule on invalid values
   );
   assert.deepEqual(next2.schedules, s.schedules);
 });
+
+test("forecast energy is conserved by the shift and survives legacy-compatible persistence", () => {
+  const s = model.demoState();
+  s.autopilot = true;
+  s.channels[1].assigned.allowAuto = true;
+  const plan = model.getPlan(s, 1000);
+  assert.equal(plan.source, "forecast-demo");
+  assert.equal(plan.windowMinutes, 90);
+  assert.equal(plan.beforeEnergyWh, 8.7);
+  assert.equal(plan.afterEnergyWh, 8.7);
+  const applied = model.reduceState(s, { type: "apply-plan" }, 1000);
+  const restored = model.restoreState(JSON.parse(JSON.stringify(applied)));
+  assert.equal(model.getPlan(restored, 2000).beforeEnergyWh, 8.7);
+  assert.equal(model.getPlan(restored, 2000).afterEnergyWh, 8.7);
+  const corrupt = JSON.parse(JSON.stringify(applied));
+  corrupt.appliedPlan.afterEnergyWh = -1;
+  assert.equal(model.restoreState(corrupt).source, "none");
+  const legacy = JSON.parse(JSON.stringify(applied));
+  for (const key of [
+    "source",
+    "windowMinutes",
+    "beforeEnergyWh",
+    "afterEnergyWh",
+  ])
+    delete legacy.appliedPlan[key];
+  assert.equal(model.restoreState(legacy).planStatus, "applied");
+});

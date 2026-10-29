@@ -14,7 +14,7 @@ python -m venv .venv
 .\.venv\Scripts\python -m uvicorn specwatt_api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-Default database: `backend/data/specwatt.sqlite3` (ignored by Git). Set `SPECWATT_DB` to use another absolute file path. Schema version 1 is initialized using `PRAGMA user_version`; newer unsupported versions fail startup. Never delete a database to resolve a migration error. Back it up first.
+Default database: `backend/data/specwatt.sqlite3` (ignored by Git). Set `SPECWATT_DB` to use another absolute file path. Schema version 3 is initialized/migrated using `PRAGMA user_version`; newer unsupported versions fail startup. Never delete a database to resolve a migration error. Back it up first.
 
 For an Android emulator on this same computer, use `http://10.0.2.2:8000` where Android emulator networking permits it; confirm Android cleartext development policy before connecting. For an attached physical device, `adb reverse tcp:8000 tcp:8000` can expose the host's loopback service as device `127.0.0.1:8000`. No LAN discovery or network exposure is enabled. External access requires a separately reviewed HTTPS deployment.
 
@@ -72,11 +72,11 @@ The actual response includes all three channels. CH2 initially consumes 0 W; CH3
 1. Submit a command with a new client-generated idempotency key (8–128 ASCII letters/digits/underscore/dash). The API stores `requested` without changing measured power.
 2. Explicitly call simulator `/step`. It rechecks protection, permissions, manual priority, telemetry freshness and peak before dispatch, then records `sent` and the selected simulator outcome.
 3. Only a simulated acknowledgement updates the simulated measured state. `timeout` and `transport-error` leave state uncertain and never trigger retries.
-4. A later complete authoritative simulated telemetry sample resolves timed-out/transport-error commands to terminal `reconciled`. If the sample matches the target, reason is `simulator_telemetry_matches_target`; otherwise reason is `target_not_reached`. The measured state always follows the complete sample. Neither reason proves command delivery; the client must display a target mismatch as a failed requested outcome rather than successful actuation. Manual priority remains anchored to the original request time. Once reconciled, a user may explicitly issue a new command with a new key; neither the server nor client should automatically retry.
+4. Plain channels-only simulated telemetry updates simulator readings but never reconciles an old command. Correlation requires `command_id`, an increasing persisted `sequence` and acquisition `measured_at` (Unix seconds), acquired strictly after dispatch and within 30 seconds of dispatch and receipt. Replays, superseded intents and out-of-order acquisition fail atomically. A matching sample records `simulator_telemetry_matches_target`; a mismatch records `target_not_reached`. These are simulator observations, not physical delivery proof. Manual priority stays anchored to the original intent. See `../security/docs/findings.md` for SEC-002 limits.
 
 Only one command may be in flight per controller. A repeated key with the same intent returns the existing record without replaying it. A reused key with different intent gives 409 `idempotency_conflict`. Rejections are committed to the audit log before returning 409 with `{detail:{code,command}}`; subsequent same-key queries return that stored rejected command. After an uncertain result, the client must read/reconcile state rather than blindly submit a different key.
 
-Default peak is 7 W. Turning LED on while lamp is on predicts 8.4 W and is rejected. Turn CH1 off, step to acknowledgement, then turn CH2 on and acknowledge: total becomes 6.6 W. CH3 cannot be switched under any origin. Automatic/scheduled commands require `allow_auto` and respect the per-channel manual hold. These origin labels apply the same stricter checks to this authenticated owner's simulator; no background scheduler is implied.
+Default peak is 7 W. Turning LED on while lamp is on predicts 8.4 W and is rejected. Turn CH1 off, step to acknowledgement, then turn CH2 on and acknowledge: total becomes 6.6 W. CH3 cannot be switched under any origin. Automatic/scheduled commands require `allow_auto` and respect the per-channel manual hold. These origin labels apply the same stricter checks to this authenticated owner's simulator; the optional scheduler worker is disabled by default (see docs/SCHEDULER_WORKER.md).
 
 ## Verification and limits
 

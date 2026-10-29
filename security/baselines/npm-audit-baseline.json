@@ -1,0 +1,88 @@
+{
+  "comment": [
+    "Reviewed baseline of accepted npm audit advisories.",
+    "Regenerate with: python security/check_npm_audit.py",
+    "<audit.json> --update  — every entry needs a documented",
+    "rationale in security/docs/findings.md."
+  ],
+  "known": {
+    "@expo/cli": {
+      "severity": "high",
+      "range": ">=0.19.0-canary-20240625-2333e70",
+      "advisories": [
+        "range:@expo/config",
+        "range:@expo/metro-config",
+        "range:@expo/prebuild-config",
+        "range:zod"
+      ],
+      "fix_available": true
+    },
+    "@expo/config": {
+      "severity": "low",
+      "range": ">=9.1.0-canary-20240628-1ba8152",
+      "advisories": [
+        "range:deepmerge"
+      ],
+      "fix_available": true
+    },
+    "@expo/local-build-cache-provider": {
+      "severity": "low",
+      "range": "*",
+      "advisories": [
+        "range:@expo/config"
+      ],
+      "fix_available": true
+    },
+    "@expo/metro-config": {
+      "severity": "low",
+      "range": ">=0.19.0-canary-20240625-2333e70",
+      "advisories": [
+        "range:@expo/config"
+      ],
+      "fix_available": true
+    },
+    "@expo/prebuild-config": {
+      "severity": "low",
+      "range": ">=7.1.0-canary-20240904-69100c1",
+      "advisories": [
+        "range:@expo/config"
+      ],
+      "fix_available": true
+    },
+    "deepmerge": {
+      "severity": "low",
+      "range": ">=4.2.0",
+      "advisories": [
+        "https://github.com/advisories/GHSA-gcqx-w48m-w2h4"
+      ],
+      "fix_available": true
+    },
+    "expo": {
+      "severity": "high",
+      "range": ">=52.0.0-canary-20240625-2333e70",
+      "advisories": [
+        "range:@expo/cli",
+        "range:@expo/config",
+        "range:@expo/local-build-cache-provider",
+        "range:@expo/metro-config"
+      ],
+      "fix_available": true
+    },
+    "node-forge": {
+      "severity": "high",
+      "range": "<=1.4.0",
+      "advisories": [
+        "https://github.com/advisories/GHSA-86w9-cpqp-85rv"
+      ],
+      "fix_available": true
+    },
+    "zod": {
+      "severity": "high",
+      "range": "<4.6.6",
+      "advisories": [
+        "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5"
+      ],
+      "fix_available": true
+    }
+  }
+}

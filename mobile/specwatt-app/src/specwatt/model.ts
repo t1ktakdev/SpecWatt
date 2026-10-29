@@ -1,7 +1,11 @@
+import {validateAppearance} from "./appearance-policy.ts";
+import type {DeviceAppearance} from "./appearance-policy.ts";
 import type { ImageId } from "./images";
 
 /** Pure local simulation: this module has no equipment transport. */
 export type Locale = "ru" | "ky";
+export type FirstRunStep = "welcome" | "insight" | "safety" | "locale" | "mode" | "controller";
+const firstRunSteps: FirstRunStep[] = ["welcome", "insight", "safety", "locale", "mode", "controller"];
 export type ChannelId = "CH1" | "CH2" | "CH3";
 export type Assign = {
   name: string;
@@ -9,6 +13,7 @@ export type Assign = {
   image: ImageId;
   room: string;
   allowAuto: boolean;
+  appearance?: DeviceAppearance;
 };
 export type Channel = {
   id: ChannelId;
@@ -53,6 +58,7 @@ export type JournalEvent = {
   details?: Record<string, string | number>;
 };
 export type DemoState = {
+  firstRunStep?: FirstRunStep;
   locale: Locale;
   source: "none" | "demo";
   onboarded: boolean;
@@ -67,6 +73,7 @@ export type DemoState = {
   appliedPlan?: LoadPlan;
 };
 export type Action =
+  | { type: "first-run-step"; value: FirstRunStep }
   | { type: "locale"; value: Locale }
   | { type: "enter-demo" }
   | { type: "leave-demo" }
@@ -211,7 +218,8 @@ function validAssignment(v: unknown): v is Assign {
     text(v.room) &&
     images.includes(v.image as string) &&
     images.includes(v.category as string) &&
-    typeof v.allowAuto === "boolean"
+    typeof v.allowAuto === "boolean" &&
+    (v.appearance===undefined||validateAppearance(v.appearance)!==null)
   );
 }
 function validSchedule(v: unknown): v is Schedule {
@@ -243,6 +251,8 @@ export function restoreState(raw: unknown): DemoState {
     return base;
   base.locale = raw.locale as Locale;
   base.onboarded = raw.onboarded === true;
+  if (firstRunSteps.includes(raw.firstRunStep as FirstRunStep))
+    base.firstRunStep = raw.firstRunStep as FirstRunStep;
   if (raw.source === "none") return base;
   if (!Array.isArray(raw.channels) || raw.channels.length !== 3)
     return emptyState();
@@ -380,6 +390,14 @@ export function restoreState(raw: unknown): DemoState {
       before: [...p.before],
       after: [...p.after],
       labels: [...p.labels],
+      ...(p.source === "forecast-demo"
+        ? {
+            source: p.source,
+            windowMinutes: p.windowMinutes,
+            beforeEnergyWh: p.beforeEnergyWh,
+            afterEnergyWh: p.afterEnergyWh,
+          }
+        : {}),
     };
   }
   return {
@@ -426,9 +444,30 @@ export type LoadPlan = {
   before: number[];
   after: number[];
   labels: string[];
+  /** Explicit simulated forecast, never actual accumulated meter energy. */
+  source?: "forecast-demo";
+  windowMinutes?: number;
+  beforeEnergyWh?: number;
+  afterEnergyWh?: number;
 };
 function validPlanSnapshot(v: unknown): v is LoadPlan {
   if (!record(v) || !finite(v.beforePeak) || !finite(v.afterPeak)) return false;
+  if (
+    [v.source, v.windowMinutes, v.beforeEnergyWh, v.afterEnergyWh].some(
+      (x) => x !== undefined,
+    ) &&
+    (v.source !== "forecast-demo" ||
+      !finite(v.windowMinutes) ||
+      !Number.isInteger(v.windowMinutes) ||
+      v.windowMinutes < 1 ||
+      v.windowMinutes > 1440 ||
+      !finite(v.beforeEnergyWh) ||
+      !finite(v.afterEnergyWh) ||
+      v.beforeEnergyWh < 0 ||
+      v.beforeEnergyWh > 1000000 ||
+      Math.abs(v.beforeEnergyWh - v.afterEnergyWh) > 1e-8)
+  )
+    return false;
   const { beforePeak, afterPeak } = v;
   return (
     v.channelId === "CH2" &&
@@ -536,6 +575,26 @@ export function getPlan(s: DemoState, now = Date.now()): LoadPlan {
     before,
     after,
     labels,
+    source: "forecast-demo" as const,
+    windowMinutes: end - begin,
+    beforeEnergyWh:
+      Math.round(
+        ((base * (end - begin)) / 60 +
+          jobs.reduce(
+            (sum, j) => sum + (nominal[j.channelId] * j.duration) / 60,
+            0,
+          )) *
+          1e9,
+      ) / 1e9,
+    afterEnergyWh:
+      Math.round(
+        ((base * (end - begin)) / 60 +
+          jobs.reduce(
+            (sum, j) => sum + (nominal[j.channelId] * j.duration) / 60,
+            0,
+          )) *
+          1e9,
+      ) / 1e9,
   };
   let reason: PlanReason = "ready";
   if (s.planStatus === "applied") reason = "applied";
@@ -586,6 +645,8 @@ export function reduceState(
 ): DemoState {
   if (a.type === "locale")
     return { ...s, locale: a.value === "ky" ? "ky" : "ru" };
+  if (a.type === "first-run-step")
+    return firstRunSteps.includes(a.value) ? { ...s, firstRunStep: a.value } : s;
   if (a.type === "enter-demo")
     return event(demoState(s.locale), "demo-start", "system", now);
   if (a.type === "leave-demo")

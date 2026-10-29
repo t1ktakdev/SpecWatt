@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,129 +10,28 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { ApiError, BrainClient, createTokenVault } from "../specwatt/api";
-import type {
-  ServerCommand,
-  ServerController,
-  ServerSnapshot,
-} from "../specwatt/api";
 import { Copy, CTA, Panel } from "../specwatt/ui";
 import { sty, theme } from "../specwatt/theme";
 import { useSpec } from "../specwatt/store";
-
-const unresolved = (command: ServerCommand) =>
-  ["requested", "sent", "timeout", "transport-error"].includes(command.status);
+import { useLive, defaultServerUrl } from "../specwatt/live-context";
+import { t } from "../specwatt/i18n";
+import {Details} from "./live-controls";
 
 export default function ServerScreen() {
-  const { data } = useSpec();
+  const { data, enterDemo } = useSpec();
   const w = (ru: string, ky: string) => (data.locale === "ky" ? ky : ru);
-  const vault = useMemo(() => createTokenVault(Platform.OS !== "web"), []);
-  const initial = useMemo(
-    () =>
-      new BrainClient({
-        baseUrl: __DEV__
-          ? Platform.OS === "android"
-            ? "http://10.0.2.2:8000"
-            : "http://127.0.0.1:8000"
-          : "https://localhost:8000",
-        development: __DEV__,
-        vault,
-      }),
-    [vault],
-  );
-  const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
-  const [client, setClient] = useState<BrainClient | null>(null);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const [controllers, setControllers] = useState<ServerController[]>([]);
-  const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(null);
-  const [commands, setCommands] = useState<ServerCommand[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [uncertain, setUncertain] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const lock = useRef(false);
-  const serial = useRef(0);
-  const mounted = useRef(true);
-
-  function clearSession() {
-    setClient(null);
-    setControllers([]);
-    setSnapshot(null);
-    setCommands([]);
-    setUncertain(false);
-  }
-  async function run(action: () => Promise<void>, commandAction = false) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError("");
-    try {
-      await action();
-    } catch (failure) {
-      const code =
-        failure instanceof ApiError ? failure.code : "operation_failed";
-      if (
-        commandAction &&
-        ["request_timeout", "network_error", "invalid_response"].includes(code)
-      )
-        setUncertain(true);
-      if (
-        [
-          "session_required",
-          "session_expired",
-          "invalid_session",
-          "authentication_required",
-          "http_401",
-        ].includes(code)
-      )
-        clearSession();
-      if (mounted.current) setError(code);
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    mounted.current = true;
-    void (async () => {
-      try {
-        if (!(await initial.hasSession())) return;
-        const rows = await initial.controllers();
-        if (mounted.current) {
-          setClient(initial);
-          setControllers(rows);
-        }
-      } catch (failure) {
-        if (mounted.current)
-          setError(
-            failure instanceof ApiError ? failure.code : "operation_failed",
-          );
-      }
-    })();
-    return () => {
-      mounted.current = false;
-    };
-  }, [initial]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  async function refresh(id: string, connection = client) {
-    if (!connection) return;
-    const value = await connection.snapshot(id);
-    const history = await connection.commands(id);
-    setSnapshot(value);
-    setCommands(history);
-    setUncertain(false);
-  }
-
-  const messages: Record<string, string> = {
+  const {workspace,state}=useLive();
+  const {client,controllers,busy,error}=state;
+  const [baseUrl,setBaseUrl]=useState(defaultServerUrl);
+  const [mode,setMode]=useState<"login"|"register">("login");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [showPassword,setShowPassword]=useState(false);
+  const [name,setName]=useState("");
+  const locale = data.locale;
+  const messages = useMemo<Record<string, string>>(() => {
+    const w = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
+    return {
     invalid_url: w(
       "Нужен HTTPS-адрес без пути, логина и параметров. В разработке HTTP разрешён только для localhost, 127.0.0.1, ::1 и 10.0.2.2.",
       "Жолу жана параметрлери жок HTTPS дарек керек. Иштеп чыгууда HTTP localhost, 127.0.0.1, ::1 жана 10.0.2.2 үчүн гана уруксат.",
@@ -230,21 +129,32 @@ export default function ServerScreen() {
       "По телеметрии целевое состояние не достигнуто. Команда завершена без подтверждения выполнения.",
       "Телеметрия боюнча максаттуу абалга жеткен жок. Буйрук аткарылганы ырасталбастан аяктады.",
     ),
-  };
-  const status = (value: string) =>
-    ({
-      requested: w("Запрошена", "Суралды"),
-      sent: w("Отправлена", "Жөнөтүлдү"),
-      acknowledged: w("Подтверждена симулятором", "Симулятор ырастады"),
-      rejected: w("Отклонена", "Четке кагылды"),
-      timeout: w("Тайм-аут", "Күтүү мөөнөтү бүттү"),
-      "transport-error": w("Ошибка передачи", "Жөнөтүү катасы"),
-      reconciled: w("Сверена с телеметрией", "Телеметрия менен текшерилди"),
-    })[value] ?? value;
-  const waiting = commands.some(unresolved) || uncertain;
-  const measuredFresh =
-    snapshot?.freshness === "fresh" && now / 1000 - snapshot.measured_at <= 30;
-
+    command_in_flight: w(
+      "Предыдущая команда ещё не завершена на сервере. Дождитесь её результата или обновите историю.",
+      "Мурунку буйрук серверде аякта элек. Анын жыйынтыгын күтүңүз же тарыхты жаңыртыңыз.",
+    ),
+    controller_not_found: w(
+      "Симулятор не найден или удалён на сервере. Обновите список симуляторов.",
+      "Симулятор табылган жок же серверден өчүрүлгөн. Симуляторлор тизмесин жаңыртыңыз.",
+    ),
+    server_busy: w(
+      "Сервер перегружен. Повторите попытку позже.",
+      "Сервер жүктөлүп калды. Кийин кайталаңыз.",
+    ),
+    schedule_cancelled: w(
+      "Отменено до отправки: расписание было отменено.",
+      "Жөнөтүлгөнгө чейин жокко чыгарылды: график жокко чыгарылган.",
+    ),
+    http_404: w(
+      "Сервер не нашёл запрошенный объект. Обновите состояние.",
+      "Сервер сураган объектти тапкан жок. Абалды жаңыртыңыз.",
+    ),
+    http_401: w(
+      "Сессия недействительна. Войдите заново.",
+      "Сессия жараксыз. Кайра кириңиз.",
+    ),
+    };
+  }, [locale]);
   return (
     <SafeAreaView style={sty.screen}>
       <KeyboardAvoidingView
@@ -271,8 +181,8 @@ export default function ServerScreen() {
             </Copy>
             <Copy muted>
               {w(
-                "Отдельное пространство FastAPI. Это не ESP32 и не физические измерения. Данные и команды не смешиваются с локальным демо.",
-                "FastAPI үчүн өзүнчө мейкиндик. Бул ESP32 жана чыныгы өлчөө эмес. Маалыматтар жана буйруктар жергиликтүү демо менен аралашпайт.",
+                "Войдите и выберите свой контроллер. Его состояние появится во всех вкладках. Здесь используется серверная симуляция, а не физические измерения.",
+                "Кирип, контроллерди тандаңыз. Анын абалы бардык өтмөктөрдө көрүнөт. Бул сервердик симуляция, чыныгы өлчөө эмес.",
               )}
             </Copy>
           </Panel>
@@ -305,12 +215,10 @@ export default function ServerScreen() {
                 keyboardType="url"
                 maxLength={300}
               />
-              <Copy muted size={12}>
-                {w(
-                  "Android-эмулятор: 10.0.2.2. Через adb reverse: localhost. На физическом устройстве используйте HTTPS. Веб-доступ требует явного CORS origin на сервере.",
-                  "Android эмулятору: 10.0.2.2. adb reverse аркылуу: localhost. Чыныгы түзмөктө HTTPS колдонуңуз. Веб үчүн серверде так CORS origin керек.",
-                )}
-              </Copy>
+              <Details label={w("О подключении", "Байланыш жөнүндө")}>
+                <Copy muted size={14}>{w("Адрес и выбранный контроллер действуют в текущем сеансе. В веб-превью после перезагрузки страницы потребуется войти и выбрать контроллер снова. Пароль не сохраняется.", "Дарек жана тандалган контроллер учурдагы сеанста иштейт. Веб-барак жаңыртылгандан кийин кайра кирип, контроллерди тандоо керек. Сырсөз сакталбайт.")}</Copy>
+                <Copy muted size={14}>{w("Локальная разработка: Android-эмулятор 10.0.2.2, веб 127.0.0.1. Веб-доступ требует разрешённого адреса CORS на сервере.", "Жергиликтүү иштеп чыгуу: Android эмулятору 10.0.2.2, веб 127.0.0.1. Веб үчүн серверде уруксат берилген CORS дареги керек.")}</Copy>
+              </Details>
               <View style={[sty.row, { gap: 10 }]}>
                 {(["login", "register"] as const).map((value) => (
                   <Pressable
@@ -318,7 +226,7 @@ export default function ServerScreen() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: mode === value }}
                     disabled={busy}
-                    onPress={() => setMode(value)}
+                    onPress={() => { setMode(value); setPassword(""); setShowPassword(false);  }}
                     style={[
                       sty.card,
                       {
@@ -347,6 +255,8 @@ export default function ServerScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
+                autoComplete="email"
+                textContentType="emailAddress"
                 maxLength={254}
               />
               <TextInput
@@ -362,9 +272,14 @@ export default function ServerScreen() {
                 placeholderTextColor={theme.dim}
                 autoCapitalize="none"
                 autoCorrect={false}
-                secureTextEntry
+                secureTextEntry={!showPassword}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                textContentType={mode === "login" ? "password" : "newPassword"}
                 maxLength={128}
               />
+              <CTA secondary disabled={busy}
+                label={t(locale, showPassword ? "hidePassword" : "showPassword")}
+                onPress={() => setShowPassword(!showPassword)} />
               <CTA
                 disabled={busy}
                 label={
@@ -373,20 +288,7 @@ export default function ServerScreen() {
                     : w("Создать серверный аккаунт", "Серверде аккаунт түзүү")
                 }
                 onPress={() => {
-                  void run(async () => {
-                    const connection = new BrainClient({
-                      baseUrl,
-                      development: __DEV__,
-                      vault,
-                    });
-                    try {
-                      await connection.authenticate(mode, email, password);
-                      setClient(connection);
-                      setControllers(await connection.controllers());
-                    } finally {
-                      setPassword("");
-                    }
-                  });
+                  void workspace.authenticate(baseUrl,mode,email,password).finally(()=>{setPassword("");setShowPassword(false);});
                 }}
               />
               <Copy muted size={12}>
@@ -398,241 +300,20 @@ export default function ServerScreen() {
             </>
           ) : (
             <>
-              <Copy muted size={12}>
-                {client.baseUrl}
-              </Copy>
-              <Copy size={22}>
-                {w("Мои симуляторы", "Менин симуляторлорум")}
-              </Copy>
-              {controllers.map((controller) => (
-                <CTA
-                  key={controller.id}
-                  disabled={busy}
-                  secondary
-                  label={controller.name}
-                  onPress={() => {
-                    void run(() => refresh(controller.id));
-                  }}
-                />
-              ))}
-              {!controllers.length && (
-                <Copy muted>
-                  {w("Пока нет контроллеров.", "Азырынча контроллер жок.")}
-                </Copy>
-              )}
-              <TextInput
-                accessibilityLabel={w(
-                  "Название симулятора",
-                  "Симулятордун аты",
-                )}
-                editable={!busy}
-                style={sty.field}
-                value={name}
-                onChangeText={setName}
-                maxLength={80}
-                placeholder={w(
-                  "Название нового симулятора",
-                  "Жаңы симулятордун аты",
-                )}
-                placeholderTextColor={theme.dim}
-              />
-              <CTA
-                disabled={busy}
-                secondary
-                label={w(
-                  "Создать серверный симулятор",
-                  "Сервердик симулятор түзүү",
-                )}
-                onPress={() => {
-                  void run(async () => {
-                    const created = await client.createSimulator(name);
-                    setName("");
-                    setControllers(await client.controllers());
-                    await refresh(created.id);
-                  });
-                }}
-              />
-              {snapshot && (
-                <>
-                  <Panel style={{ gap: 9 }}>
-                    <Copy size={23}>{snapshot.name}</Copy>
-                    <Copy accent size={35}>
-                      {measuredFresh && snapshot.total_watts !== null
-                        ? snapshot.total_watts.toFixed(1).replace(".", ",")
-                        : "—"}{" "}
-                      {w("Вт", "Вт")}
-                    </Copy>
-                    <Copy muted>
-                      {measuredFresh
-                        ? w(
-                            "Телеметрия симулятора · свежая",
-                            "Симулятордун жаңы телеметриясы",
-                          )
-                        : w(
-                            "Телеметрия устарела или результат неизвестен",
-                            "Телеметрия эскирген же жыйынтык белгисиз",
-                          )}
-                    </Copy>
-                    <Copy muted size={12}>
-                      {w("Допустимый пик: ", "Чектүү чоку: ")}
-                      {snapshot.peak_watts} {w("Вт", "Вт")}
-                    </Copy>
-                  </Panel>
-                  {snapshot.channels.map((channel) => (
-                    <Panel key={channel.id} style={{ gap: 8 }}>
-                      <Copy size={18}>
-                        {channel.id} · {channel.assigned.name}
-                      </Copy>
-                      <Copy muted>
-                        {channel.protected
-                          ? w(
-                              "Защищён · управление запрещено",
-                              "Корголгон · башкарууга тыюу салынат",
-                            )
-                          : measuredFresh
-                            ? `${channel.watts?.toFixed(1).replace(".", ",")} ${w("Вт", "Вт")}`
-                            : w("Нет свежих измерений", "Жаңы өлчөө жок")}
-                      </Copy>
-                      {!channel.protected && (
-                        <CTA
-                          disabled={busy || waiting || !measuredFresh}
-                          secondary
-                          label={
-                            (channel.watts ?? 0) > 0
-                              ? w("Запросить выключение", "Өчүрүүнү суроо")
-                              : w("Запросить включение", "Күйгүзүүнү суроо")
-                          }
-                          onPress={() => {
-                            void run(async () => {
-                              const key = `mobile-${Date.now()}-${++serial.current}`;
-                              const command = await client.command(
-                                snapshot.controller_id,
-                                channel.id as "CH1" | "CH2",
-                                !(channel.watts! > 0),
-                                key,
-                              );
-                              setCommands((current) => [command, ...current]);
-                            }, true);
-                          }}
-                        />
-                      )}
-                    </Panel>
-                  ))}
-                  <Copy muted size={12}>
-                    {w(
-                      "Запрос не меняет показания. Следующая кнопка явно запускает отправку и подтверждение серверным симулятором.",
-                      "Суроо көрсөткүчтөрдү өзгөртпөйт. Кийинки баскыч сервердик симулятордо жөнөтүүнү жана ырастоону иштетет.",
-                    )}
-                  </Copy>
-                  <CTA
-                    disabled={
-                      busy ||
-                      !commands.some(
-                        (command) => command.status === "requested",
-                      )
-                    }
-                    label={w(
-                      "Отправить и подтвердить · шаг симулятора",
-                      "Жөнөтүү жана ырастоо · симулятор кадамы",
-                    )}
-                    onPress={() => {
-                      void run(async () => {
-                        setSnapshot(await client.step(snapshot.controller_id));
-                        setCommands(
-                          await client.commands(snapshot.controller_id),
-                        );
-                      }, true);
-                    }}
-                  />
-                  <CTA
-                    disabled={busy}
-                    secondary
-                    label={w(
-                      "Обновить состояние и историю команд",
-                      "Абалды жана буйруктар тарыхын жаңыртуу",
-                    )}
-                    onPress={() => {
-                      void run(() => refresh(snapshot.controller_id));
-                    }}
-                  />
-                  <CTA
-                    disabled={busy}
-                    secondary
-                    label={w(
-                      "Симулятор: повторить последний образец телеметрии",
-                      "Симулятор: акыркы телеметрия үлгүсүн кайталоо",
-                    )}
-                    onPress={() => {
-                      void run(async () => {
-                        setSnapshot(
-                          await client.sample(snapshot.controller_id, snapshot),
-                        );
-                        setCommands(
-                          await client.commands(snapshot.controller_id),
-                        );
-                        setUncertain(false);
-                      });
-                    }}
-                  />
-                  <Copy muted size={12}>
-                    {w(
-                      "Образец создаёт только серверный симулятор из последних известных значений. Это не опрос оборудования.",
-                      "Үлгүнү сервердик симулятор акыркы белгилүү маанилерден түзөт. Бул жабдууну сурамжылоо эмес.",
-                    )}
-                  </Copy>
-                  {uncertain && (
-                    <Copy accent>
-                      {w(
-                        "Результат запроса неизвестен. Обновите историю; автоматического повтора нет.",
-                        "Суроонун жыйынтыгы белгисиз. Тарыхты жаңыртыңыз; автоматтык кайталоо жок.",
-                      )}
-                    </Copy>
-                  )}
-                  <Copy size={21}>
-                    {w("Команды сервера", "Сервердин буйруктары")}
-                  </Copy>
-                  {commands.slice(0, 10).map((command) => (
-                    <Panel key={command.id} style={{ gap: 5 }}>
-                      <Copy>
-                        {command.channel_id} ·{" "}
-                        {command.on
-                          ? w("Включить", "Күйгүзүү")
-                          : w("Выключить", "Өчүрүү")}
-                      </Copy>
-                      <Copy accent>{status(command.status)}</Copy>
-                      <Copy muted size={12}>
-                        {command.transitions
-                          .map((step) => status(step.status))
-                          .join(" → ")}
-                      </Copy>
-                      {!!command.reason && (
-                        <Copy muted size={12}>
-                          {messages[command.reason] ?? command.reason}
-                        </Copy>
-                      )}
-                    </Panel>
-                  ))}
-                </>
-              )}
-              <CTA
-                disabled={busy}
-                secondary
-                label={w(
-                  "Выйти и удалить локальный токен",
-                  "Чыгуу жана жергиликтүү токенди өчүрүү",
-                )}
-                onPress={() => {
-                  void run(async () => {
-                    try {
-                      await client.logout();
-                    } finally {
-                      clearSession();
-                    }
-                  });
-                }}
-              />
+              <Copy muted size={14}>{client.baseUrl}</Copy>
+              <Copy size={24}>{w("Мои контроллеры", "Менин контроллерлорум")}</Copy>
+              {!controllers.length && <Panel style={{gap:8}}><Copy>{w("Контроллеров пока нет", "Азырынча контроллер жок")}</Copy><Copy muted>{w("Создайте серверный симулятор, чтобы проверить весь сценарий без оборудования.", "Жабдуусуз текшерүү үчүн сервердик симулятор түзүңүз.")}</Copy></Panel>}
+              {controllers.map(controller=><CTA key={controller.id} secondary disabled={busy||state.refreshing} label={controller.name} onPress={()=>{
+                void workspace.select(controller.id).then(()=>router.replace("/home"));
+              }}/>)}
+              <TextInput accessibilityLabel={w("Название симулятора", "Симулятордун аты")} editable={!busy} style={sty.field} value={name} onChangeText={setName} maxLength={80} placeholder={w("Название нового симулятора", "Жаңы симулятордун аты")} placeholderTextColor={theme.dim}/>
+              <CTA secondary disabled={busy||!name.trim()} label={w("Создать серверный симулятор", "Сервердик симулятор түзүү")} onPress={()=>{
+                void workspace.create(name).then(()=>{if(workspace.getState().selectedId)router.replace("/home");});
+              }}/>
+              <CTA secondary disabled={busy} label={w("Выйти и удалить локальный токен", "Чыгуу жана жергиликтүү токенди өчүрүү")} onPress={()=>void workspace.logout()}/>
             </>
           )}
+          <CTA secondary label={w("Перейти в DEMO", "DEMO режимине өтүү")} onPress={()=>{workspace.demo();enterDemo();router.replace("/home");}}/>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

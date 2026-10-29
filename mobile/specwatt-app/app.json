@@ -13,10 +13,23 @@
         "backgroundColor": "#1D201C",
         "foregroundImage": "./assets/specwatt/icon.png"
       },
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "blockedPermissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "plugins": [
-      "expo-router",
+      [
+        "expo-router",
+        {
+          "asyncRoutes": {
+            "web": false
+          }
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -26,7 +39,15 @@
         }
       ],
       "expo-secure-store",
-      "expo-build-properties"
+      "expo-build-properties",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": false,
+          "microphonePermission": false,
+          "photosPermission": "Выберите изображение устройства для локального хранения."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

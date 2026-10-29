@@ -113,6 +113,47 @@ test("snapshot rejects incorrect totals, duplicate channels and weakened CH3 pro
   assert.throws(() => parseSnapshot({ ...value, source: "physical" }));
 });
 
+test("telemetry sequence is bounded and never inferred from the receipt time", () => {
+  assert.equal(parseSnapshot(snapshot()).telemetry_sequence, 0);
+  assert.equal(parseSnapshot({ ...snapshot(), telemetry_sequence: 7 }).telemetry_sequence, 7);
+  for (const sequence of [-1, 0.5, Infinity, "7"]) {
+    assert.throws(() => parseSnapshot({ ...snapshot(), telemetry_sequence: sequence }));
+  }
+});
+
+test("ordinary simulator samples do not pretend to correlate an old command", async () => {
+  let sent;
+  const client = clientWith(async (_url, options) => {
+    sent = JSON.parse(options.body);
+    return new Response(JSON.stringify(snapshot()), { status: 200 });
+  }, vaultWith("token"));
+  await client.sample("stand1", parseSnapshot(snapshot()));
+  assert.deepEqual(Object.keys(sent), ["channels"]);
+});
+
+test("automation consent is explicit, preserves assignment and refuses CH3 before transport", async () => {
+  const requests = [];
+  const client = clientWith(async (url, options) => {
+    requests.push({ url, method: options.method, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify(snapshot()), { status: 200 });
+  }, vaultWith("token"));
+  const parsed = parseSnapshot(snapshot());
+  await assert.rejects(() => client.automationConsent("stand1", parsed.channels[2], true));
+  assert.equal(requests.length, 0);
+  await client.automationConsent("stand1", parsed.channels[0], true);
+  assert.equal(requests[0].method, "PATCH");
+  assert.deepEqual(requests[0].body, { ...parsed.channels[0].assigned, allow_auto: true });
+});
+
+test("cancelled queued scheduler commands remain readable in server history", async () => {
+  const client = clientWith(async () => new Response(JSON.stringify([{
+    id: "c1", controller_id: "stand1", channel_id: "CH1", on: true,
+    status: "cancelled", reason: "schedule_cancelled", source: "simulator",
+    transitions: [{ status: "requested", at: 1000 }, { status: "cancelled", at: 1001 }],
+  }]), { status: 200 }), vaultWith("token"));
+  assert.equal((await client.commands("stand1"))[0].status, "cancelled");
+});
+
 test("stale snapshot hides current watts and preserves historical readings", () => {
   const value = snapshot();
   const stale = {
@@ -207,7 +248,7 @@ test("transport failure never retries and logout clears the local session despit
   assert.equal(vault.token, null);
 });
 
-test("request timeout aborts the single in-flight request", async () => {
+test("request timeout on a safe GET is retried exactly once, then reported", async () => {
   let requests = 0;
   const client = clientWith(
     (_url, options) =>
@@ -220,13 +261,13 @@ test("request timeout aborts the single in-flight request", async () => {
         );
       }),
     vaultWith("token"),
-    { timeoutMs: 10 },
+    { timeoutMs: 10, retryDelayMs: 1 },
   );
   await assert.rejects(
     () => client.controllers(),
     (error) => error.code === "request_timeout",
   );
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
 });
 
 test("CH3 is rejected locally before a network request", async () => {

@@ -1,15 +1,15 @@
+import {DeviceVisual} from "../specwatt/device-visual";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useEffect, useState } from "react";
-import { View, Pressable } from "react-native";
+import { View, useWindowDimensions } from "react-native";
 import { router } from "expo-router";
-import { Copy, CTA, Photo } from "../specwatt/ui";
+import { Copy, CTA } from "../specwatt/ui";
 import { useSpec } from "../specwatt/store";
 import { getPlan } from "../specwatt/model";
-import { imageMap } from "../specwatt/images";
 import {
   Shell,
   Header,
   Brand,
-  Gauge,
   RowLink,
   Card,
   Empty,
@@ -88,6 +88,8 @@ function useNow() {
 }
 export function AutopilotScreen() {
   const { data, setAutopilot } = useSpec();
+  const {width,fontScale}=useWindowDimensions();
+  const stacked=width<360||fontScale>1.2;
   const w = useWords();
   const now = useNow();
   const plan = getPlan(data, now);
@@ -109,48 +111,31 @@ export function AutopilotScreen() {
         <Empty />
       ) : (
         <>
-          <Gauge
-            bolt
-            value={
-              data.autopilot ? w("Включён", "Күйүк") : w("Выключен", "Өчүк")
-            }
-            subtitle={w(
-              `Разрешено ${data.channels.filter((c) => !c.protected && c.assigned?.allowAuto).length} из 3 каналов`,
-              `${data.channels.filter((c) => !c.protected && c.assigned?.allowAuto).length} / 3 каналга уруксат берилген`,
-            )}
-          />
-          <View style={{ alignItems: "center", marginBottom: 3 }}>
-            <Toggle
-              label={w("Автопилот", "Автопилот")}
-              value={data.autopilot}
-              onChange={setAutopilot}
-            />
-          </View>
-          <Pressable
-            onPress={() => router.replace("/plan")}
-            style={[s.card, { padding: 0, minHeight: 148 }]}
-          >
-            <Photo
-              source={imageMap["led-strip"]}
-              style={{
-                position: "absolute",
-                right: 0,
-                bottom: 0,
-                width: "54%",
-                height: 125,
-                opacity: 0.7,
-              }}
-            />
-            <View style={{ padding: 15, gap: 3 }}>
-              <Copy muted size={12}>
-                {w("Следующее предложение", "Кийинки сунуш")}
-              </Copy>
-              <Copy size={17}>LED-{w("лента", "тасма")} · CH2</Copy>
-              <Copy size={40}>{plan.to || "—"}</Copy>
-              <Copy muted size={12}>
-                {w("После выключения светильника", "Чырак өчкөндөн кийин")}
-              </Copy>
+          <Card style={{gap:16}}>
+            <View style={{flexDirection:stacked?'column':'row',gap:16,alignItems:stacked?'stretch':'center'}}>
+              <View style={{flex:1,gap:6}}>
+                <Copy size={13} muted>{w("Состояние автопилота","Автопилоттун абалы")}</Copy>
+                <Copy size={30} accent={data.autopilot}>{data.autopilot?w("Включён","Күйүк"):w("Выключен","Өчүк")}</Copy>
+              </View>
+              <Toggle label={w("Автопилот","Автопилот")} value={data.autopilot} onChange={setAutopilot}/>
             </View>
+            <Copy size={14} muted>{w(
+              `Разрешено ${data.channels.filter(c=>!c.protected&&c.assigned?.allowAuto).length} из ${data.channels.filter(c=>!c.protected).length} управляемых каналов`,
+              `${data.channels.filter(c=>!c.protected&&c.assigned?.allowAuto).length} / ${data.channels.filter(c=>!c.protected).length} башкарылуучу каналга уруксат берилген`
+            )}</Copy>
+            <Copy size={13} muted>{planReason(plan.reason,w)}</Copy>
+          </Card>
+          <Pressable accessibilityRole="button" accessibilityLabel={w("Открыть предложение плана","План сунушун ачуу")} onPress={()=>router.replace("/plan")} style={[s.card,{gap:12}]}>
+            <Copy size={12} accent>{w("ПРЕДЛОЖЕНИЕ · ДЕМО","СУНУШ · ДЕМО")}</Copy>
+            <View style={{flexDirection:'row',alignItems:'center',gap:12}}>
+              <DeviceVisual assignment={data.channels.find(c=>c.id==="CH2")?.assigned} id="CH2" style={{width:96,height:96}}/>
+              <View style={{flex:1,gap:4}}>
+                <Copy size={18}>{data.channels.find(c=>c.id==="CH2")?.assigned?.name||w("LED-лента","LED-тасма")} · CH2</Copy>
+                <Copy size={32}>{plan.to||"—"}</Copy>
+                <Copy muted size={13}>{w("После выключения светильника","Чырак өчкөндөн кийин")}</Copy>
+              </View>
+            </View>
+            <Copy size={12} muted>{w("Предложение не является выполненной командой","Сунуш аткарылган буйрук эмес")}</Copy>
           </Pressable>
           <RowLink
             icon="shield"
@@ -164,7 +149,7 @@ export function AutopilotScreen() {
               router.push({ pathname: "/device", params: { id: "CH3" } })
             }
           />
-          <Card style={{ padding: 0 }}>
+          <Card style={{ padding: 0, borderWidth: 0, backgroundColor: "transparent", gap: 12 }}>
             <RowLink
               icon="pulse"
               title={w("Допустимый пик", "Уруксат берилген чоку")}
@@ -207,6 +192,8 @@ export function PlanScreen() {
   const { data, applyPlan, rejectPlan } = useSpec();
   const w = useWords();
   const plan = getPlan(data, useNow());
+  const {width,fontScale}=useWindowDimensions();
+  const stacked=width<360||fontScale>1.2;
   return (
     <Shell active="/plan">
       <Header
@@ -220,11 +207,11 @@ export function PlanScreen() {
         <Empty />
       ) : (
         <>
-          <View style={[s.between, { marginVertical: 3 }]}>
+          <View style={[s.between, { marginVertical: 4, flexWrap: "wrap", alignItems: "flex-start" }]}>
             <View>
-              <Copy size={49}>
+              <Copy size={stacked?36:44}>
                 {formatW(plan.beforePeak)}
-                <Copy size={25}> Вт</Copy>
+                <Copy size={18}> Вт</Copy>
               </Copy>
               <Copy size={12} muted style={{ textAlign: "center" }}>
                 {w("Без плана", "Плансыз")}
@@ -232,9 +219,9 @@ export function PlanScreen() {
             </View>
             <Icon name="next" size={26} />
             <View>
-              <Copy size={49} accent>
+              <Copy size={stacked?36:44} accent>
                 {formatW(plan.afterPeak)}
-                <Copy accent size={25}>
+                <Copy accent size={18}>
                   {" "}
                   Вт
                 </Copy>
@@ -255,23 +242,23 @@ export function PlanScreen() {
             }
             style={[
               s.card,
-              { padding: 0, flexDirection: "row", minHeight: 113 },
+              { padding: 12, flexDirection: stacked ? "column" : "row", alignItems: "center", minHeight: 113 },
             ]}
           >
-            <Photo
-              source={imageMap["led-strip"]}
-              style={{ width: "39%", height: 113 }}
+            <DeviceVisual
+              assignment={data.channels.find(c=>c.id==="CH2")?.assigned} id="CH2"
+              style={{ width: stacked ? "100%" : 104, height: 112 }}
             />
-            <View style={{ flex: 1, padding: 13, gap: 6 }}>
+            <View style={{ flex: 1, padding: 8, gap: 6, minWidth: 0 }}>
               <Copy size={13}>
                 {w(
                   "Перенести запуск LED-ленты",
                   "LED тасманын башталышын жылдыруу",
                 )}
               </Copy>
-              <Copy size={26}>
+              <Copy size={24}>
                 {plan.from} →{" "}
-                <Copy size={26} accent>
+                <Copy size={24} accent>
                   {plan.to || "—"}
                 </Copy>
               </Copy>
@@ -300,9 +287,10 @@ export function PlanScreen() {
               <Copy muted size={12}>
                 {w(
                   "Перенос не означает снижение расхода кВт·ч.",
-                  "Жылдыруу кВт·с сарптоону азайтууну билдирбейт.",
+                  "Жылдыруу энергия сарптоону азайтууну билдирбейт.",
                 )}
               </Copy>
+              {plan.beforeEnergyWh!==undefined&&plan.afterEnergyWh!==undefined&&<Copy size={12} muted>{w('Энергия окна','Убакыт терезесиндеги энергия')}: {plan.beforeEnergyWh.toFixed(1).replace('.',',')} → {plan.afterEnergyWh.toFixed(1).replace('.',',')} Wh</Copy>}
             </View>
           </Card>
           <Copy size={12} muted>

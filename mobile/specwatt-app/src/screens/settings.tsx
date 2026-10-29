@@ -1,21 +1,24 @@
+import {clearDevicePhotos} from "../specwatt/photos";
+import { MotionPressable as Pressable } from '../specwatt/motion';
 import React, { useState } from "react";
-import { View, TextInput, Pressable, Share } from "react-native";
+import { View, TextInput, Share } from "react-native";
 import { router } from "expo-router";
 import { Copy, CTA } from "../specwatt/ui";
 import { useSpec } from "../specwatt/store";
+import { t } from "../specwatt/i18n";
+import { applyLocale } from "../specwatt/localization/locale-mirror";
 import { theme, sty } from "../specwatt/theme";
 import {
   Shell,
   Header,
   Card,
   RowLink,
-  useWords,
   s,
 } from "../specwatt/mobile-ui";
 
 export function SettingsScreen() {
   const { data, setLocale, setPeak, setManualMinutes, leaveDemo } = useSpec();
-  const w = useWords();
+  const locale = data.locale;
   const [peak, setPeakInput] = useState(String(data.peak));
   const [hold, setHold] = useState(String(data.manualMinutes));
   const [message, setMessage] = useState("");
@@ -32,47 +35,42 @@ export function SettingsScreen() {
       m < 1 ||
       m > 240
     ) {
-      setMessage(
-        w(
-          "Пик: 1–100 Вт; приоритет: 1–240 минут.",
-          "Чоку: 1–100 Вт; артыкчылык: 1–240 мүнөт.",
-        ),
-      );
+      setMessage(t(locale, "errLimits"));
       return;
     }
     setPeak(p);
     setManualMinutes(m);
-    setMessage(w("Настройки сохранены.", "Жөндөөлөр сакталды."));
+    setMessage(t(locale, "saved"));
   }
   return (
     <Shell active="/home">
       <Header
-        title={w("Настройки", "Жөндөөлөр")}
-        subtitle={w(
-          "Локальное пространство · Демо",
-          "Жергиликтүү мейкиндик · Демо",
-        )}
+        title={t(locale, "settingsTitle")}
+        subtitle={t(locale, "localSpace")}
         icon="back"
         onPress={() =>
           router.canGoBack() ? router.back() : router.replace("/home")
         }
       />
       <Card style={{ gap: 14 }}>
-        <Copy size={20}>{w("Язык интерфейса", "Интерфейстин тили")}</Copy>
+        <Copy size={20}>{t(locale, "language")}</Copy>
         <View style={{ flexDirection: "row", gap: 12 }}>
           {(["ru", "ky"] as const).map((l) => (
             <Pressable
               key={l}
               accessibilityRole="button"
+              accessibilityLabel={l === "ru" ? t(locale, "langRu") : t(locale, "langKy")}
+              accessibilityHint={t(locale, "langHint")}
               accessibilityState={{ selected: data.locale === l }}
-              onPress={() => setLocale(l)}
+              onPress={() => applyLocale(setLocale, l)}
               style={[
                 s.chip,
+                { minHeight: 48 },
                 data.locale === l && { borderColor: theme.peach },
               ]}
             >
               <Copy accent={data.locale === l}>
-                {l === "ru" ? "Русский" : "Кыргызча"}
+                {l === "ru" ? t(locale, "langRu") : t(locale, "langKy")}
               </Copy>
             </Pressable>
           ))}
@@ -80,30 +78,30 @@ export function SettingsScreen() {
       </Card>
       <Card style={{ gap: 10 }}>
         <Copy size={20}>
-          {w("Безопасная координация", "Коопсуз координация")}
+          {t(locale, "safeCoordination")}
         </Copy>
         <Copy muted size={13}>
-          {w("Допустимый пик, Вт", "Уруксат берилген чоку, Вт")}
+          {t(locale, "peakW")}
         </Copy>
         <TextInput
-          accessibilityLabel={w("Допустимый пик", "Уруксат берилген чоку")}
+          accessibilityLabel={t(locale, "peakA11y")}
           value={peak}
           onChangeText={setPeakInput}
           style={sty.field}
           keyboardType="decimal-pad"
         />
         <Copy muted size={13}>
-          {w("Ручной приоритет, минут", "Кол башкаруу артыкчылыгы, мүнөт")}
+          {t(locale, "holdMinutes")}
         </Copy>
         <TextInput
-          accessibilityLabel={w("Ручной приоритет", "Кол башкаруу артыкчылыгы")}
+          accessibilityLabel={t(locale, "holdA11y")}
           value={hold}
           onChangeText={setHold}
           style={sty.field}
           keyboardType="number-pad"
         />
         <CTA
-          label={w("Сохранить ограничения", "Чектөөлөрдү сактоо")}
+          label={t(locale, "saveLimits")}
           disabled={data.source !== "demo"}
           onPress={save}
         />
@@ -113,27 +111,22 @@ export function SettingsScreen() {
           </Copy>
         )}
       </Card>
+      <RowLink icon="plug" title={t(locale, "svgCatalogTitle")} subtitle={t(locale, "svgCatalogSub")} onPress={()=>router.push("/catalog")}/>
       <RowLink
         icon="plug"
-        title={w("Контроллер и разрешения", "Контроллер жана уруксаттар")}
+        title={t(locale, "controllerPerms")}
         onPress={() => router.push("/setup")}
       />
       <RowLink
         icon="pulse"
-        title={w("Серверный симулятор", "Сервердик симулятор")}
-        subtitle={w(
-          "FastAPI · отдельная тестовая среда",
-          "FastAPI · өзүнчө сыноо чөйрөсү",
-        )}
+        title={t(locale, "serverSimulator")}
+        subtitle={t(locale, "serverSimSub")}
         onPress={() => router.push("/server")}
       />
       <RowLink
         icon="journal"
-        title={w("Экспорт демоданных", "Демо маалыматты экспорттоо")}
-        subtitle={w(
-          "Настройки и события, без секретов",
-          "Жөндөөлөр жана окуялар, сырларсыз",
-        )}
+        title={t(locale, "exportDemo")}
+        subtitle={t(locale, "exportSub")}
         onPress={() => {
           Share.share({
             message: JSON.stringify(
@@ -142,86 +135,61 @@ export function SettingsScreen() {
               2,
             ),
           }).catch(() =>
-            setMessage(
-              w("Не удалось открыть экспорт.", "Экспорт ачылган жок."),
-            ),
+            setMessage(t(locale, "errExport")),
           );
         }}
       />
       <RowLink
         icon="info"
-        title={w("Конфиденциальность и условия", "Купуялык жана шарттар")}
-        subtitle={w(
-          "Черновик для локальной демонстрации",
-          "Жергиликтүү демонстрация үчүн долбоор",
-        )}
+        title={t(locale, "privacy")}
+        subtitle={t(locale, "privacySub")}
         onPress={() => setLegal(!legal)}
       />
       {legal && (
         <Card style={{ gap: 12 }}>
           <Copy size={19}>
-            {w(
-              "Черновик · 26 октября 2026",
-              "Долбоор · 2026-жылдын 26-октябры",
-            )}
+            {t(locale, "legalDraft")}
           </Copy>
           <Copy>
-            {w(
-              "Деморежим хранит названия, помещения, разрешения, расписания и последние 100 событий на этом устройстве. Физические команды и аналитика не отправляются. Экспорт происходит только по вашему действию.",
-              "Демо режим аттарды, бөлмөлөрдү, уруксаттарды, жадыбалдарды жана акыркы 100 окуяны ушул түзмөктө сактайт. Жабдууга буйрук жана аналитика жөнөтүлбөйт. Экспорт сиздин аракетиңиз менен гана аткарылат.",
-            )}
+            {t(locale, "legal1")}
           </Copy>
           <Copy>
-            {w(
-              "Отдельный серверный симулятор передаёт учётные данные выбранному вами API. Токен на Android хранится в SecureStore. Серверный аккаунт не удаляется при очистке демо.",
-              "Өзүнчө сервердик симулятор каттоо маалыматтарын сиз тандаган APIге жөнөтөт. Android токени SecureStore ичинде сакталат. Демону тазалоо сервердик аккаунтту өчүрбөйт.",
-            )}
+            {t(locale, "legal2")}
           </Copy>
           <Copy>
-            {w(
-              "Учебный прототип рассчитан на подтверждённый низковольтный стенд. Не используйте его для экспериментальных подключений 220 В. Перенос нагрузки не гарантирует экономию энергии.",
-              "Окуу прототиби тастыкталган төмөн чыңалуудагы стенд үчүн. Аны 220 В тажрыйбалык туташууларда колдонбоңуз. Жүктөмдү жылдыруу энергия үнөмдөөгө кепилдик бербейт.",
-            )}
+            {t(locale, "legal3")}
           </Copy>
           <Copy muted size={12}>
-            {w(
-              "Юридическая проверка и проверка перевода не проводились. До публичного запуска нужны реквизиты оператора, контакты, политика серверного хранения и проверка применимых требований.",
-              "Юридикалык жана котормо текшерүүсү жүргүзүлгөн эмес. Жалпыга чыгарууга чейин оператордун маалыматтары, байланыштары, сервердик сактоо саясаты жана колдонулуучу талаптарды текшерүү керек.",
-            )}
+            {t(locale, "legalNote")}
           </Copy>
         </Card>
       )}
       <Card style={{ gap: 10 }}>
         <Copy size={17}>SpecWATT · 0.2.0</Copy>
         <Copy size={12} muted>
-          {w(
-            "Демо и серверный симулятор. ESP32, облако, уведомления и физическая автоматика не подключены.",
-            "Демо жана сервердик симулятор. ESP32, булут, билдирмелер жана физикалык автоматика кошулган эмес.",
-          )}
+          {t(locale, "versionNote")}
         </Copy>
         <CTA
           secondary
-          label={w("Очистить демопространство", "Демо мейкиндикти тазалоо")}
+          label={t(locale, "clearDemo")}
           onPress={() => setConfirm(true)}
         />
         {confirm && (
           <>
             <Copy>
-              {w(
-                "Удалить локальные демоканалы, настройки и журнал?",
-                "Жергиликтүү демо каналдарды, жөндөөлөрдү жана журналды өчүрөсүзбү?",
-              )}
+              {t(locale, "clearConfirm")}
             </Copy>
             <CTA
-              label={w("Удалить демоданные", "Демо маалыматты өчүрүү")}
+              label={t(locale, "deleteDemo")}
               onPress={() => {
-                leaveDemo();
+                try{clearDevicePhotos();}catch{}
+                      leaveDemo();
                 router.replace("/home");
               }}
             />
             <CTA
               secondary
-              label={w("Отмена", "Жокко чыгаруу")}
+              label={t(locale, "cancel")}
               onPress={() => setConfirm(false)}
             />
           </>

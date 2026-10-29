@@ -19,15 +19,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
-CHANNELS = {'CH1': 1.8, 'CH2': 4.2, 'CH3': 2.4}
-FRESH_SECONDS = 30
+from .base import CHANNELS, FRESH_SECONDS, Input
+from .clock import SystemClock
+
 SESSION_SECONDS = 86400
-
-
-class Input(BaseModel):
-    model_config = ConfigDict(extra='forbid', strict=True)
 
 
 class Credentials(Input):
@@ -81,6 +78,17 @@ class StepInput(Input):
 
 class TelemetryInput(Input):
     channels: dict[str, float]
+    measured_at: float | None = Field(default=None, allow_inf_nan=False, ge=0)
+    sequence: int | None = Field(default=None, ge=1, le=9_007_199_254_740_991)
+    command_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode='after')
+    def complete_acquisition(self):
+        if (self.measured_at is None) != (self.sequence is None):
+            raise ValueError('acquisition_time_and_sequence_required_together')
+        if self.command_id is not None and self.measured_at is None:
+            raise ValueError('correlation_requires_acquisition_metadata')
+        return self
 
     @field_validator('channels')
     @classmethod
@@ -127,7 +135,7 @@ def migrate(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with connect(path) as db:
         version = db.execute('PRAGMA user_version').fetchone()[0]
-        if version > 1:
+        if version > 3:
             raise RuntimeError('Database schema is newer than this server')
         db.executescript('''
             CREATE TABLE IF NOT EXISTS users (
@@ -165,15 +173,35 @@ def migrate(path):
                 sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                 controller_id TEXT NOT NULL REFERENCES controllers(id),
                 measured_at REAL NOT NULL, channels TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS telemetry_cursors (
+                controller_id TEXT PRIMARY KEY REFERENCES controllers(id),
+                sequence INTEGER NOT NULL, measured_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS schedules (
+                id TEXT PRIMARY KEY,
+                controller_id TEXT NOT NULL REFERENCES controllers(id),
+                channel_id TEXT NOT NULL CHECK(channel_id IN ('CH1','CH2')),
+                action TEXT NOT NULL CHECK(action IN ('on','off')),
+                start_at REAL NOT NULL, end_at REAL NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL CHECK(status IN
+                    ('pending','running','completed','cancelled','rejected','uncertain')),
+                phase TEXT NOT NULL DEFAULT 'start' CHECK(phase IN ('start','end')),
+                command_id TEXT REFERENCES commands(id),
+                rejection_reason TEXT, note TEXT NOT NULL DEFAULT '',
+                created_at REAL NOT NULL, updated_at REAL NOT NULL,
+                CHECK(action!='on' OR end_at>start_at),
+                UNIQUE(controller_id,id));
             CREATE INDEX IF NOT EXISTS events_controller ON events(controller_id, sequence);
             CREATE INDEX IF NOT EXISTS commands_controller ON commands(controller_id, created_at);
-            PRAGMA user_version=1;
+            CREATE INDEX IF NOT EXISTS schedules_due ON schedules(controller_id, status, start_at);
+            PRAGMA user_version=3;
         ''')
 
 
-def event(db, cid, kind, channel=None, command=None, reason=None):
+def event(db, cid, kind, channel=None, command=None, reason=None, now=0.0):
+    """Audit event at an explicit time; callers pass the app clock's now()."""
     db.execute('INSERT INTO events(controller_id,kind,channel_id,command_id,reason,created_at) VALUES (?,?,?,?,?,?)',
-               (cid, kind, channel, command, reason, time.time()))
+               (cid, kind, channel, command, reason, now))
 
 
 def owned(db, cid, uid):
@@ -190,18 +218,20 @@ def command_json(row):
             'created_at': row['created_at'], 'transitions': json.loads(row['transitions'])}
 
 
-def transition(db, command, status, reason=None):
+def transition(db, command, status, reason=None, now=0.0):
     history = json.loads(db.execute('SELECT transitions FROM commands WHERE id=?', (command['id'],)).fetchone()[0])
-    history.append({'status': status, 'at': time.time()})
+    history.append({'status': status, 'at': now})
     db.execute('UPDATE commands SET status=?,reason=?,transitions=? WHERE id=?',
                (status, reason, json.dumps(history), command['id']))
-    event(db, command['controller_id'], 'command.' + status, command['channel_id'], command['id'], reason)
+    event(db, command['controller_id'], 'command.' + status, command['channel_id'], command['id'], reason, now)
 
 
-def snapshot(db, controller):
-    fresh = (not controller['uncertain']) and 0 <= time.time() - controller['measured_at'] <= FRESH_SECONDS
+def snapshot(db, controller, now):
+    fresh = (not controller['uncertain']) and 0 <= now - controller['measured_at'] <= FRESH_SECONDS
     rows = db.execute('SELECT * FROM channels WHERE controller_id=? ORDER BY id', (controller['id'],)).fetchall()
+    cursor = db.execute('SELECT sequence FROM telemetry_cursors WHERE controller_id=?', (controller['id'],)).fetchone()
     return {'controller_id': controller['id'], 'name': controller['name'], 'source': 'simulator',
+            'telemetry_sequence': cursor['sequence'] if cursor else 0,
             'measured_at': controller['measured_at'], 'freshness': 'fresh' if fresh else 'stale',
             'peak_watts': controller['peak_watts'], 'manual_priority_minutes': controller['manual_priority_minutes'],
             'total_watts': round(sum(row['watts'] for row in rows), 1) if fresh else None,
@@ -211,9 +241,8 @@ def snapshot(db, controller):
                           'image': row['image'], 'allow_auto': bool(row['allow_auto'])}} for row in rows]}
 
 
-def save_measurement(db, cid):
+def save_measurement(db, cid, now):
     values = {r['id']: r['watts'] for r in db.execute('SELECT id,watts FROM channels WHERE controller_id=?', (cid,))}
-    now = time.time()
     db.execute('UPDATE controllers SET measured_at=?,uncertain=0 WHERE id=?', (now, cid))
     db.execute('INSERT INTO measurements(controller_id,measured_at,channels) VALUES (?,?,?)', (cid, now, json.dumps(values)))
 
@@ -237,10 +266,45 @@ def command_rejection(db, controller, channel, origin, on, now):
     return None
 
 
-def create_app(database_path: str | Path | None = None) -> FastAPI:
+def issue_command(db, controller, channel_id, on, origin, idempotency_key, now):
+    """Single guarded command-creation core shared by the HTTP endpoint and
+    the scheduler runner. The caller owns the surrounding transaction.
+
+    Returns ``(command, rejection)``. ``rejection`` is None both for a fresh
+    accepted command and for an idempotent replay of the same key with the
+    same intent; ``'idempotency_conflict'`` marks a key reuse with different
+    intent. Rejected commands are still stored and audited before returning.
+    """
+    cid = controller['id']
+    previous = db.execute('SELECT * FROM commands WHERE controller_id=? AND idempotency_key=?',
+                          (cid, idempotency_key)).fetchone()
+    if previous:
+        if (previous['channel_id'], bool(previous['target_on']), previous['origin']) != (channel_id, bool(on), origin):
+            return command_json(previous), 'idempotency_conflict'
+        return command_json(previous), None
+    channel = db.execute('SELECT * FROM channels WHERE controller_id=? AND id=?', (cid, channel_id)).fetchone()
+    rejection = command_rejection(db, controller, channel, origin, bool(on), now)
+    cmd_id = str(uuid.uuid4())
+    status = 'rejected' if rejection else 'requested'
+    db.execute('INSERT INTO commands VALUES (?,?,?,?,?,?,?,?,?,?)',
+               (cmd_id, cid, channel_id, int(bool(on)), origin, idempotency_key, status, rejection, now,
+                json.dumps([{'status': status, 'at': now}])))
+    event(db, cid, 'command.' + status, channel_id, cmd_id, rejection, now)
+    return command_json(db.execute('SELECT * FROM commands WHERE id=?', (cmd_id,)).fetchone()), rejection
+
+
+def create_app(database_path: str | Path | None = None, clock=None, *,
+               scheduler_enabled: bool | None = None, scheduler_poll_seconds: float = 1.0) -> FastAPI:
+    # Every timestamp the server writes or compares comes from this clock.
+    # Production passes nothing (wall clock); tests substitute a VirtualClock.
+    clock = clock or SystemClock()
     path = str(database_path or os.environ.get('SPECWATT_DB', str(Path(__file__).resolve().parents[1] / 'data' / 'specwatt.sqlite3')))
     migrate(path)
-    app = FastAPI(title='SpecWATT Brain — local simulator', version='0.1.0', docs_url=None, redoc_url=None, openapi_url=None)
+    from .scheduler.worker import scheduler_lifespan
+    if scheduler_enabled is None:
+        scheduler_enabled = os.environ.get('SPECWATT_SCHEDULER_ENABLED') == '1'
+    app = FastAPI(lifespan=scheduler_lifespan(path, clock, enabled=scheduler_enabled,
+                                           poll_seconds=scheduler_poll_seconds), title='SpecWATT Brain — local simulator', version='0.1.0', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.database_path = path
     origins = [value.strip() for value in os.environ.get('SPECWATT_CORS_ORIGINS', '').split(',') if value.strip()]
     for origin in origins:
@@ -248,9 +312,6 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password
                 or '*' in origin or origin != f'{parsed.scheme}://{parsed.netloc}'):
             raise ValueError('SPECWATT_CORS_ORIGINS must list exact HTTP(S) origins without paths or wildcards')
-    if origins:
-        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
-                           allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Authorization', 'Content-Type'])
     limiter = {}
     limit_lock = threading.Lock()
     bearer = HTTPBearer(auto_error=False)
@@ -298,15 +359,15 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             raise HTTPException(401, detail={'code': 'authentication_required'}, headers={'WWW-Authenticate': 'Bearer'})
         with connect(path) as db:
             row = db.execute('SELECT user_id FROM sessions WHERE token_hash=? AND expires_at>?',
-                             (token_hash(credentials.credentials), time.time())).fetchone()
+                             (token_hash(credentials.credentials), clock.now())).fetchone()
         if row is None:
             raise HTTPException(401, detail={'code': 'invalid_session'}, headers={'WWW-Authenticate': 'Bearer'})
         return row['user_id']
 
     def issue_session(db, uid):
         token = secrets.token_urlsafe(32)
-        expires = time.time() + SESSION_SECONDS
-        db.execute('DELETE FROM sessions WHERE expires_at<=?', (time.time(),))
+        expires = clock.now() + SESSION_SECONDS
+        db.execute('DELETE FROM sessions WHERE expires_at<=?', (clock.now(),))
         db.execute('INSERT INTO sessions VALUES (?,?,?)', (token_hash(token), uid, expires))
         return {'access_token': token, 'token_type': 'bearer', 'expires_at': expires, 'user_id': uid}
 
@@ -320,7 +381,7 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         hashed = password_hash(payload.password)
         try:
             with connect(path) as db:
-                db.execute('INSERT INTO users VALUES (?,?,?,?)', (uid, payload.email, hashed, time.time()))
+                db.execute('INSERT INTO users VALUES (?,?,?,?)', (uid, payload.email, hashed, clock.now()))
                 return issue_session(db, uid)
         except sqlite3.IntegrityError:
             raise HTTPException(409, detail={'code': 'registration_unavailable'}) from None
@@ -330,7 +391,12 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         with connect(path) as db:
             row = db.execute('SELECT id,password_hash FROM users WHERE email=?', (payload.email,)).fetchone()
             stored = row['password_hash'] if row else dummy_hash
-            candidate = password_hash(payload.password, stored.split('$')[4])
+            try:
+                candidate = password_hash(payload.password, stored.split('$')[4])
+            except (IndexError, ValueError):
+                # A corrupted verifier cannot match any password; answer like a
+                # failed login instead of crashing with 500 on damaged state.
+                raise HTTPException(401, detail={'code': 'invalid_credentials'}) from None
             if not hmac.compare_digest(candidate, stored) or row is None:
                 raise HTTPException(401, detail={'code': 'invalid_credentials'})
             return issue_session(db, row['id'])
@@ -351,18 +417,18 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
         cid = str(uuid.uuid4())
         with connect(path) as db:
             db.execute('INSERT INTO controllers(id,owner_id,name,source,measured_at) VALUES (?,?,?,?,?)',
-                       (cid, uid, payload.name, 'simulator', time.time()))
+                       (cid, uid, payload.name, 'simulator', clock.now()))
             for channel, name, image, watts in [('CH1', 'Светильник', 'lamp', 1.8), ('CH2', 'LED-лента', 'led-strip', 0.0), ('CH3', 'Вентилятор', 'fan', 2.4)]:
                 db.execute('INSERT INTO channels(controller_id,id,protected,name,room,image,watts) VALUES (?,?,?,?,?,?,?)',
                            (cid, channel, int(channel == 'CH3'), name, 'Учебный стенд', image, watts))
-            save_measurement(db, cid)
-            event(db, cid, 'simulator.created')
+            save_measurement(db, cid, clock.now())
+            event(db, cid, 'simulator.created', now=clock.now())
         return {'id': cid, 'name': payload.name, 'source': 'simulator'}
 
     @app.get('/v1/controllers/{cid}/snapshot')
     def get_snapshot(cid: str, uid=Depends(user)):
         with connect(path) as db:
-            return snapshot(db, owned(db, cid, uid))
+            return snapshot(db, owned(db, cid, uid), clock.now())
 
     @app.patch('/v1/controllers/{cid}/settings')
     def settings(cid: str, payload: SettingsInput, uid=Depends(user)):
@@ -370,8 +436,8 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             owned(db, cid, uid)
             db.execute('UPDATE controllers SET peak_watts=?,manual_priority_minutes=? WHERE id=?',
                        (payload.peak_watts, payload.manual_priority_minutes, cid))
-            event(db, cid, 'settings.updated')
-            return snapshot(db, owned(db, cid, uid))
+            event(db, cid, 'settings.updated', now=clock.now())
+            return snapshot(db, owned(db, cid, uid), clock.now())
 
     @app.patch('/v1/controllers/{cid}/channels/{channel_id}/assignment')
     def assignment(cid: str, channel_id: Literal['CH1', 'CH2', 'CH3'], payload: Assignment, uid=Depends(user)):
@@ -381,32 +447,21 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
                 raise HTTPException(409, detail={'code': 'protected_channel'})
             db.execute('UPDATE channels SET name=?,room=?,image=?,allow_auto=? WHERE controller_id=? AND id=?',
                        (payload.name, payload.room.strip(), payload.image, int(payload.allow_auto), cid, channel_id))
-            event(db, cid, 'assignment.updated', channel_id)
-            return snapshot(db, owned(db, cid, uid))
+            event(db, cid, 'assignment.updated', channel_id, now=clock.now())
+            return snapshot(db, owned(db, cid, uid), clock.now())
 
     @app.post('/v1/controllers/{cid}/commands')
     def request_command(cid: str, payload: CommandInput, uid=Depends(user)):
-        rejection = None
         with connect(path) as db:
             db.execute('BEGIN IMMEDIATE')
             controller = owned(db, cid, uid)
-            previous = db.execute('SELECT * FROM commands WHERE controller_id=? AND idempotency_key=?', (cid, payload.idempotency_key)).fetchone()
-            if previous:
-                if (previous['channel_id'], bool(previous['target_on']), previous['origin']) != (payload.channel_id, payload.on, payload.origin):
-                    raise HTTPException(409, detail={'code': 'idempotency_conflict'})
-                return command_json(previous)
-            channel = db.execute('SELECT * FROM channels WHERE controller_id=? AND id=?', (cid, payload.channel_id)).fetchone()
-            now = time.time()
-            rejection = command_rejection(db, controller, channel, payload.origin, payload.on, now)
-            cmd_id = str(uuid.uuid4())
-            status = 'rejected' if rejection else 'requested'
-            db.execute('INSERT INTO commands VALUES (?,?,?,?,?,?,?,?,?,?)', (cmd_id, cid, payload.channel_id, int(payload.on), payload.origin,
-                       payload.idempotency_key, status, rejection, now, json.dumps([{'status': status, 'at': now}])))
-            event(db, cid, 'command.' + status, payload.channel_id, cmd_id, rejection)
-            result = command_json(db.execute('SELECT * FROM commands WHERE id=?', (cmd_id,)).fetchone())
+            command, rejection = issue_command(db, controller, payload.channel_id, payload.on, payload.origin,
+                                               payload.idempotency_key, clock.now())
+        if rejection == 'idempotency_conflict':
+            raise HTTPException(409, detail={'code': 'idempotency_conflict'})
         if rejection:
-            raise HTTPException(409, detail={'code': rejection, 'command': result})
-        return result
+            raise HTTPException(409, detail={'code': rejection, 'command': command})
+        return command
 
     @app.get('/v1/controllers/{cid}/commands/{command_id}')
     def get_command(cid: str, command_id: str, uid=Depends(user)):
@@ -431,61 +486,87 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             db.execute('BEGIN IMMEDIATE')
             controller = owned(db, cid, uid)
             commands = db.execute("SELECT * FROM commands WHERE controller_id=? AND status='requested' ORDER BY created_at", (cid,)).fetchall()
+            now = clock.now()
             for command in commands:
                 channel = db.execute('SELECT * FROM channels WHERE controller_id=? AND id=?', (cid, command['channel_id'])).fetchone()
                 # Re-check permissions, CH3, stale state and peak at dispatch time.
                 reason = None
                 if channel['id'] == 'CH3' or channel['protected']:
                     reason = 'protected_channel'
-                elif controller['uncertain'] or not 0 <= time.time() - controller['measured_at'] <= FRESH_SECONDS:
+                elif controller['uncertain'] or not 0 <= now - controller['measured_at'] <= FRESH_SECONDS:
                     reason = 'stale_measurements'
                 elif command['origin'] != 'manual' and not channel['allow_auto']:
                     reason = 'automation_not_allowed'
-                elif command['origin'] != 'manual' and channel['manual_until'] > time.time():
+                elif command['origin'] != 'manual' and channel['manual_until'] > now:
                     reason = 'manual_priority_active'
                 elif command['target_on']:
                     total = db.execute('SELECT SUM(watts) FROM channels WHERE controller_id=?', (cid,)).fetchone()[0]
                     if round(total - channel['watts'] + CHANNELS[channel['id']], 1) > controller['peak_watts']:
                         reason = 'peak_exceeded'
                 if reason:
-                    transition(db, command, 'rejected', reason)
+                    transition(db, command, 'rejected', reason, now)
                     continue
-                transition(db, command, 'sent')
+                transition(db, command, 'sent', now=now)
                 if payload.outcome == 'acknowledged':
                     db.execute('UPDATE channels SET watts=?,manual_until=? WHERE controller_id=? AND id=?',
                                (CHANNELS[channel['id']] if command['target_on'] else 0.0,
-                                time.time() + controller['manual_priority_minutes'] * 60 if command['origin'] == 'manual' else channel['manual_until'], cid, channel['id']))
-                    save_measurement(db, cid)
-                    transition(db, command, 'acknowledged', 'simulator_confirmed')
+                                now + controller['manual_priority_minutes'] * 60 if command['origin'] == 'manual' else channel['manual_until'], cid, channel['id']))
+                    save_measurement(db, cid, now)
+                    transition(db, command, 'acknowledged', 'simulator_confirmed', now)
                 else:
                     db.execute('UPDATE controllers SET uncertain=1 WHERE id=?', (cid,))
-                    transition(db, command, payload.outcome, 'simulator_injected_failure')
-            return {'processed': len(commands), 'source': 'simulator', 'snapshot': snapshot(db, owned(db, cid, uid))}
+                    if command['origin'] == 'manual':
+                        hold_until = command['created_at'] + controller['manual_priority_minutes'] * 60
+                        db.execute('UPDATE channels SET manual_until=MAX(manual_until,?) WHERE controller_id=? AND id=?',
+                                   (hold_until, cid, command['channel_id']))
+                    transition(db, command, payload.outcome, 'simulator_injected_failure', now)
+            return {'processed': len(commands), 'source': 'simulator', 'snapshot': snapshot(db, owned(db, cid, uid), now)}
 
     @app.post('/v1/controllers/{cid}/simulator/telemetry')
     def telemetry(cid: str, payload: TelemetryInput, uid=Depends(user)):
         with connect(path) as db:
             db.execute('BEGIN IMMEDIATE')
             controller = owned(db, cid, uid)
+            now = clock.now()
+            # Channels-only input is an explicit simulator state injection. It
+            # refreshes state, but cannot establish any command's outcome.
+            command = None
+            if payload.measured_at is not None:
+                acquired = payload.measured_at
+                cursor = db.execute('SELECT * FROM telemetry_cursors WHERE controller_id=?', (cid,)).fetchone()
+                if (not 0 <= now - acquired <= FRESH_SECONDS
+                        or acquired < controller['measured_at']
+                        or (cursor and (payload.sequence <= cursor['sequence'] or acquired <= cursor['measured_at']))):
+                    raise HTTPException(409, detail={'code': 'stale_or_replayed_telemetry'})
+                if payload.command_id is not None:
+                    command = db.execute('SELECT rowid AS intent_order,* FROM commands WHERE id=? AND controller_id=?',
+                                         (payload.command_id, cid)).fetchone()
+                    if command is None:
+                        raise HTTPException(404, detail={'code': 'command_not_found'})
+                    sent = [entry['at'] for entry in json.loads(command['transitions']) if entry['status'] == 'sent']
+                    newer = db.execute("SELECT 1 FROM commands WHERE controller_id=? AND channel_id=? AND rowid>? "
+                                       "AND status NOT IN ('rejected','cancelled') LIMIT 1",
+                                       (cid, command['channel_id'], command['intent_order'])).fetchone()
+                    if (command['status'] not in ('timeout', 'transport-error') or not sent
+                            or not 0 < acquired - max(sent) <= FRESH_SECONDS or newer):
+                        raise HTTPException(409, detail={'code': 'telemetry_command_correlation_invalid'})
+                db.execute('INSERT INTO telemetry_cursors VALUES (?,?,?) ON CONFLICT(controller_id) '
+                           'DO UPDATE SET sequence=excluded.sequence,measured_at=excluded.measured_at',
+                           (cid, payload.sequence, acquired))
             for channel, watts in payload.channels.items():
                 db.execute('UPDATE channels SET watts=? WHERE controller_id=? AND id=?', (watts, cid, channel))
-            save_measurement(db, cid)
-            pending = db.execute("SELECT * FROM commands WHERE controller_id=? AND status IN ('timeout','transport-error')", (cid,)).fetchall()
-            for command in pending:
+            save_measurement(db, cid, payload.measured_at if payload.measured_at is not None else now)
+            if command is not None:
                 observed_on = payload.channels[command['channel_id']] > 0
-                # A complete authoritative sample resolves uncertainty even
-                # when the requested target was not reached. Neither outcome
-                # is an acknowledgement of command delivery.
                 reason = 'simulator_telemetry_matches_target' if observed_on == bool(command['target_on']) else 'target_not_reached'
-                transition(db, command, 'reconciled', reason)
+                transition(db, command, 'reconciled', reason, now)
+                # Never renew an old manual intent's hold from arrival time.
                 if command['origin'] == 'manual':
-                    # Preserve the user's hold after an ambiguous result;
-                    # old reconciliation must not create a brand-new hold.
                     hold_until = command['created_at'] + controller['manual_priority_minutes'] * 60
                     db.execute('UPDATE channels SET manual_until=MAX(manual_until,?) WHERE controller_id=? AND id=?',
                                (hold_until, cid, command['channel_id']))
-            event(db, cid, 'telemetry.simulated')
-            return snapshot(db, owned(db, cid, uid))
+            event(db, cid, 'telemetry.simulated', now=now)
+            return snapshot(db, owned(db, cid, uid), now)
 
     @app.get('/v1/controllers/{cid}/measurements')
     def measurements(cid: str, after: int = 0, limit: int = 100, uid=Depends(user)):
@@ -504,4 +585,14 @@ def create_app(database_path: str | Path | None = None) -> FastAPI:
             owned(db, cid, uid)
             return [{**dict(r), 'source': 'simulator'} for r in db.execute('SELECT * FROM events WHERE controller_id=? AND sequence>? ORDER BY sequence LIMIT ?', (cid, after, limit))]
 
+    # Imported here on purpose: the scheduler package imports helpers from
+    # this module, so the router can only be wired once this factory exists.
+    from .scheduler.router import register_scheduler_routes
+    register_scheduler_routes(app, path=path, clock=clock, user_dependency=user)
+
+    # CORS surrounds limits: browser preflights are transport negotiation, not
+    # API calls, and actual 429/413 responses must retain the exact allowed origin.
+    if origins:
+        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
+                           allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Authorization', 'Content-Type'])
     return app

@@ -8,7 +8,8 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { emptyState, reduceState, restoreState } from "./model";
-import type { Action, Assign, ChannelId, DemoState, Locale } from "./model";
+import type { Action, Assign, ChannelId, DemoState, FirstRunStep, Locale } from "./model";
+import { localeFromStoredState, recallLocale, rememberLocale } from "./localization/locale-mirror";
 
 export type {
   Assign,
@@ -30,6 +31,7 @@ type Ctx = {
   leaveDemo: () => void;
   assign: (id: ChannelId, assignment: Assign) => void;
   setOnboarded: () => void;
+  setFirstRunStep: (value: FirstRunStep) => void;
   toggleChannel: (id: ChannelId) => void;
   setAutopilot: (value: boolean) => void;
   setPeak: (value: number) => void;
@@ -47,28 +49,60 @@ export function SpecProvider({ children }: { children: React.ReactNode }) {
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
-    AsyncStorage.getItem(KEY)
-      .then((raw) => {
-        if (!live.current || raw === null) return;
-        if (raw.length > 100000) throw new Error("invalid-storage");
-        const parsed: unknown = JSON.parse(raw),
-          restored = restoreState(parsed);
-        setData(restored);
-        if (
-          restored.source === "none" &&
-          typeof parsed === "object" &&
-          parsed !== null &&
-          "source" in parsed &&
-          parsed.source === "demo"
-        )
-          setStorageError("invalid-storage");
-      })
-      .catch(() => {
-        if (live.current) setStorageError("read-error");
-      })
-      .finally(() => {
-        if (live.current) setReady(true);
-      });
+    async function load() {
+      let next = emptyState();
+      let error: string | null = null;
+      let corruptLocale: Locale | null = null;
+      let recover = false;
+      try {
+        const raw = await AsyncStorage.getItem(KEY);
+        if (raw === null) {
+          recover = true; // Main record missing: try the independent locale.
+        } else if (raw.length > 100000) {
+          error = "invalid-storage";
+          recover = true;
+        } else {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            error = "invalid-storage";
+            recover = true;
+          }
+          if (!recover) {
+            corruptLocale = localeFromStoredState(parsed);
+            const source =
+              typeof parsed === "object" && parsed !== null && "source" in parsed
+                ? parsed.source
+                : null;
+            const restored = restoreState(parsed);
+            if (
+              !corruptLocale ||
+              (source !== "none" && source !== "demo") ||
+              (source === "demo" && restored.source !== "demo")
+            ) {
+              // Discard ALL unsafe channel/consent data, but recover language.
+              error = "invalid-storage";
+              recover = true;
+            } else {
+              next = restored;
+            }
+          }
+        }
+      } catch {
+        error = "read-error";
+        recover = true;
+      }
+      if (recover) {
+        const mirror = await recallLocale(AsyncStorage);
+        next = { ...emptyState(), locale: corruptLocale ?? mirror ?? "ru" };
+      }
+      if (!live.current) return;
+      setData(next);
+      if (error) setStorageError(error);
+      setReady(true);
+    }
+    void load();
     return () => {
       live.current = false;
     };
@@ -76,12 +110,18 @@ export function SpecProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!ready) return;
     const snapshot = JSON.stringify(data);
-    // Serialize writes: an older snapshot must never overwrite a newer one.
+    const locale = data.locale;
+    // Strict order of ALL writes: an old language can never overwrite a
+    // newer one. Persist the primary state first, then its recovery mirror.
     writes.current = writes.current
       .catch(() => {})
-      .then(() => AsyncStorage.setItem(KEY, snapshot))
-      .catch(() => {
-        if (live.current) setStorageError("write-error");
+      .then(async () => {
+        try {
+          await AsyncStorage.setItem(KEY, snapshot);
+        } catch {
+          if (live.current) setStorageError("write-error");
+        }
+        await rememberLocale(AsyncStorage, locale);
       });
   }, [ready, data]);
   const ctx = useMemo<Ctx>(() => {
@@ -95,6 +135,7 @@ export function SpecProvider({ children }: { children: React.ReactNode }) {
       leaveDemo: () => dispatch({ type: "leave-demo" }),
       assign: (id, assignment) => dispatch({ type: "assign", id, assignment }),
       setOnboarded: () => dispatch({ type: "onboarded" }),
+      setFirstRunStep: (value) => dispatch({ type: "first-run-step", value }),
       toggleChannel: (id) => dispatch({ type: "toggle", id }),
       setAutopilot: (value) => dispatch({ type: "autopilot", value }),
       setPeak: (value) => dispatch({ type: "peak", value }),
