@@ -81,7 +81,7 @@ try {
         await page.evaluate(fixture=>localStorage.setItem('specwatt-mobile-v1',JSON.stringify(fixture)),{...emptyState(),locale});
         await page.goto(qaBaseUrl+'/');
         await capture('welcome','/');
-        await page.getByRole('button',{name:locale==='ru'?'Продолжить':'Улантуу',exact:true}).click();
+        await page.getByRole('button',{name:locale==='ru'?'Пропустить знакомство':'Таанышууну өткөрүү',exact:true}).click();
         await capture('language','/ (locale)');
         await page.getByRole('button',{name:locale==='ru'?'Продолжить':'Улантуу',exact:true}).click();
         await capture('mode','/ (mode)');

@@ -40,8 +40,9 @@ try {
  const before=await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1'));
  await page.getByRole('textbox',{name:'Адрес сервера',exact:true}).fill(base);
  await page.getByRole('button',{name:'Регистрация',exact:true}).click();
- await page.getByRole('textbox',{name:'Email',exact:true}).fill(randomBytes(8).toString('hex')+'@example.test');
- await page.getByLabel('Пароль',{exact:true}).fill(randomBytes(24).toString('base64url'));
+ const email=randomBytes(8).toString('hex')+'@example.test',password=randomBytes(24).toString('base64url');
+ await page.getByRole('textbox',{name:'Email',exact:true}).fill(email);
+ await page.getByLabel('Пароль',{exact:true}).fill(password);
  await page.getByRole('button',{name:'Создать серверный аккаунт',exact:true}).click();
  await page.waitForTimeout(700);
  assert.deepEqual(await page.getByRole('alert').allTextContents(),[],'registration error');
@@ -71,10 +72,28 @@ try {
  assert.equal((await logoutResponse).status(),204);
  await page.getByRole('textbox',{name:'Email',exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Выйти и удалить локальный токен',exact:true}).count(),0);
+ // Real login after logout, including an explicit invalid-credential error.
+ await page.getByRole('button',{name:'Войти',exact:true}).click();
+ await page.getByRole('textbox',{name:'Email',exact:true}).fill(email);
+ await page.getByLabel('Пароль',{exact:true}).fill('x'.repeat(12));
+ await page.getByRole('button',{name:'Войти на сервер',exact:true}).click();
+ await page.getByRole('alert').filter({hasText:'Email или пароль неверен.'}).waitFor();
+ await page.getByLabel('Пароль',{exact:true}).fill(password);
+ await page.getByRole('button',{name:'Показать пароль',exact:true}).click();
+ assert.equal(await page.getByLabel('Пароль',{exact:true}).evaluate(n=>n.type),'text');
+ await page.getByRole('button',{name:'Скрыть пароль',exact:true}).click();
+ assert.equal(await page.getByLabel('Пароль',{exact:true}).evaluate(n=>n.type),'password');
+ // No screenshots while credentials are present, even in a failure handler.
+ await page.getByRole('button',{name:'Войти на сервер',exact:true}).click();
+ await page.getByText('Мои симуляторы',{exact:true}).waitFor();
+ assert.equal(await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1')),before);
+ await page.getByRole('button',{name:'Выйти и удалить локальный токен',exact:true}).click();
+ await page.getByRole('textbox',{name:'Email',exact:true}).waitFor();
  assert.deepEqual(errors,[]);
+ console.log('PASS: real login after logout, invalid credentials, show/hide, no demo mutation.');
  console.log('PASS: real server registration, simulator snapshot, requested without ACK, explicit simulator ACK, scheduler CH1/CH2 only, logout, demo unchanged. Disposable loopback backend only.');
 } catch(error) {
- if(page){console.log('UI alerts:',await page.getByRole('alert').allTextContents());await page.screenshot({path:path.join(evidence,'failure.png')});}
+ if(page){console.log('UI alerts:',await page.getByRole('alert').allTextContents());await page.locator('input').fill('').catch(()=>{});await page.screenshot({path:path.join(evidence,'failure.png'),mask:[page.locator('input')]});}
  throw error;
 } finally {
  fs.writeFileSync(path.join(evidence,'manifest.json'),JSON.stringify(manifest,null,2));
