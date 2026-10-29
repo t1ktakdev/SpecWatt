@@ -34,6 +34,7 @@ try {
   await page.getByRole('button',{name:`${ch1.assigned.name} · ${locale==='ru'?'Подробнее':'Кененирээк'}`,exact:true}).click();
   await page.waitForURL('**/device?id=CH1');
   await page.getByRole('button',{name:locale==='ru'?'Назад':'Артка',exact:true}).click();
+  await page.waitForURL('**/home');
   assert.equal(new URL(page.url()).pathname,'/home');
   await page.getByRole('tab',{name:locale==='ru'?'Устройства':'Түзмөктөр',exact:true}).click();
   await page.getByRole('button',{name:locale==='ru'?'Защищённые':'Корголгон',exact:true}).click();
