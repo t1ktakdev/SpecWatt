@@ -312,9 +312,6 @@ def create_app(database_path: str | Path | None = None, clock=None, *,
         if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password
                 or '*' in origin or origin != f'{parsed.scheme}://{parsed.netloc}'):
             raise ValueError('SPECWATT_CORS_ORIGINS must list exact HTTP(S) origins without paths or wildcards')
-    if origins:
-        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
-                           allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Authorization', 'Content-Type'])
     limiter = {}
     limit_lock = threading.Lock()
     bearer = HTTPBearer(auto_error=False)
@@ -593,4 +590,9 @@ def create_app(database_path: str | Path | None = None, clock=None, *,
     from .scheduler.router import register_scheduler_routes
     register_scheduler_routes(app, path=path, clock=clock, user_dependency=user)
 
+    # CORS surrounds limits: browser preflights are transport negotiation, not
+    # API calls, and actual 429/413 responses must retain the exact allowed origin.
+    if origins:
+        app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=False,
+                           allow_methods=['GET', 'POST', 'PATCH'], allow_headers=['Authorization', 'Content-Type'])
     return app

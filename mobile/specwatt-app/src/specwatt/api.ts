@@ -69,6 +69,7 @@ export type ServerChannel = {
   watts: number | null;
   last_known_watts: number;
   freshness: "fresh" | "stale";
+  manual_until?: number;
   assigned: { name: string; room: string; image: string; allow_auto: boolean };
 };
 export type ServerSnapshot = {
@@ -80,6 +81,7 @@ export type ServerSnapshot = {
   freshness: "fresh" | "stale";
   total_watts: number | null;
   peak_watts: number;
+  manual_priority_minutes?: number;
   channels: ServerChannel[];
 };
 export function parseSnapshot(value: unknown): ServerSnapshot {
@@ -119,6 +121,7 @@ export function parseSnapshot(value: unknown): ServerSnapshot {
       watts,
       last_known_watts: last,
       freshness: ch.freshness as ServerChannel["freshness"],
+      ...(ch.manual_until === undefined ? {} : {manual_until:number(ch.manual_until)}),
       assigned: {
         name: string(assigned.name, 80),
         room: assigned.room,
@@ -146,10 +149,12 @@ export function parseSnapshot(value: unknown): ServerSnapshot {
     freshness: item.freshness as ServerSnapshot["freshness"],
     total_watts: total,
     peak_watts: number(item.peak_watts),
+    ...(item.manual_priority_minutes === undefined ? {} : {manual_priority_minutes:number(item.manual_priority_minutes)}),
     channels,
   };
 }
 export type ServerCommand = {
+  origin?: "manual" | "autopilot" | "schedule";
   id: string;
   controller_id: string;
   channel_id: ServerChannel["id"];
@@ -166,6 +171,30 @@ export type ServerCommand = {
   reason: string | null;
   transitions: { status: string; at: number }[];
 };
+export type ServerEvent = {
+  sequence: number; controller_id: string; source: "simulator"; kind: string;
+  channel_id: ServerChannel["id"] | null; command_id: string | null;
+  reason: string | null; created_at: number;
+};
+export type ServerMeasurement = {
+  sequence: number; source: "simulator"; measured_at: number;
+  channels: Record<ServerChannel["id"], number>;
+};
+function sequence(value: unknown): number {
+  const n = number(value);
+  if (!Number.isSafeInteger(n) || n < 1) throw new ApiError("invalid_response");
+  return n;
+}
+function historyPage(value: unknown, after: number): RecordValue[] {
+  if (!Array.isArray(value) || value.length > 100) throw new ApiError("invalid_response");
+  let previous = after;
+  return value.map(raw => {
+    const item = object(raw), next = sequence(item.sequence);
+    if (item.source !== "simulator" || next <= previous) throw new ApiError("invalid_response");
+    previous = next;
+    return item;
+  });
+}
 function parseCommand(value: unknown): ServerCommand {
   const item = object(value);
   if (
@@ -182,11 +211,13 @@ function parseCommand(value: unknown): ServerCommand {
       "reconciled",
     ].includes(item.status as string) ||
     typeof item.on !== "boolean" ||
+    (item.origin !== undefined && !["manual","autopilot","schedule"].includes(item.origin as string)) ||
     !Array.isArray(item.transitions) ||
     item.transitions.length > 20
   )
     throw new ApiError("invalid_response");
   return {
+    ...(item.origin === undefined ? {} : {origin:item.origin as ServerCommand["origin"]}),
     id: string(item.id, 128),
     controller_id: string(item.controller_id, 128),
     channel_id: item.channel_id as ServerChannel["id"],
@@ -575,6 +606,25 @@ export class BrainClient {
     if (!Array.isArray(result) || result.length > 100)
       throw new ApiError("invalid_response");
     return result.map(parseCommand);
+  }
+  async events(id: string, after = 0, options?: RequestOptions): Promise<ServerEvent[]> {
+    const result = await this.request(this.path(id) + `/events?after=${after}&limit=100`, "GET", undefined, true, options?.signal);
+    return historyPage(result, after).map(item => {
+      if (item.controller_id !== id || (item.channel_id !== null && !["CH1", "CH2", "CH3"].includes(item.channel_id as string))) throw new ApiError("invalid_response");
+      return {sequence: sequence(item.sequence), controller_id: id, source: "simulator", kind: string(item.kind, 80),
+        channel_id: item.channel_id as ServerEvent["channel_id"], command_id: item.command_id === null ? null : string(item.command_id,128),
+        reason: item.reason === null ? null : string(item.reason, 200), created_at: number(item.created_at)};
+    });
+  }
+  async measurements(id: string, after = 0, options?: RequestOptions): Promise<ServerMeasurement[]> {
+    const result = await this.request(this.path(id) + `/measurements?after=${after}&limit=100`, "GET", undefined, true, options?.signal);
+    return historyPage(result, after).map(item => {
+      const ch = object(item.channels);
+      if (Object.keys(ch).sort().join(",") !== "CH1,CH2,CH3") throw new ApiError("invalid_response");
+      const channels = {CH1:number(ch.CH1), CH2:number(ch.CH2), CH3:number(ch.CH3)};
+      if (channels.CH1 > 1e9 || channels.CH2 > 1e9 || channels.CH3 !== 2.4) throw new ApiError("invalid_response");
+      return {sequence:sequence(item.sequence), source:"simulator", measured_at:number(item.measured_at), channels};
+    });
   }
   async automationConsent(id: string, channel: ServerChannel, allowed: boolean): Promise<ServerSnapshot> {
     if (channel.id === "CH3" || channel.protected) throw new ApiError("protected_channel");

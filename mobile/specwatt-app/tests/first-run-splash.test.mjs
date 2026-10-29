@@ -16,7 +16,7 @@ function mount({loaded=false,error=null,reduce=()=>new Promise(()=>{})}={}) {
   'expo-font':{useFonts:()=>[loaded,error]},
   'react-native':{View:'View',Text:'Text',Animated:{Value:class{},View:'Overlay',sequence:()=>({start(){started++;},stop(){}}),delay:()=>{},timing:()=>{}},AccessibilityInfo:{isReduceMotionEnabled:reduce,addEventListener:()=>({remove(){}})}},
   'expo-splash-screen':{preventAutoHideAsync:()=>Promise.resolve(),hideAsync:()=>{hidden++;return Promise.resolve();}},
-  '../specwatt/store':{SpecProvider:'Store'},'../specwatt/theme':{theme:{}},'../assets/specwatt/Arimo.ttf':0};
+  '../specwatt/live-context':{LiveProvider:'LiveProvider'},'../specwatt/store':{SpecProvider:'Store'},'../specwatt/theme':{theme:{}},'../assets/specwatt/Arimo.ttf':0};
  const exports={};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/app/_layout.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText,{exports,require:n=>mocks[n],setTimeout:(fn,ms)=>{const timer={fn,ms};timers.push(timer);return timer;},clearTimeout:timer=>{timer.cleared=true;}});
  const render=()=>{cursor=0;const tree=exports.default();effects.splice(0).forEach(fn=>fn());return tree;};

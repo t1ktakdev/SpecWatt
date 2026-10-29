@@ -4,17 +4,11 @@
 // claims: the server itself reports hardware_transport=false.
 import assert from 'node:assert/strict';
 import net from 'node:net';
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import test, { after } from 'node:test';
-import { fileURLToPath } from 'node:url';
 import { BrainClient, ApiError } from '../src/specwatt/api.ts';
 import { blocksNewCommands } from '../src/specwatt/server-request-scope.ts';
 
-const testsDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(testsDir, '..', '..', '..');
+import { startFastApi } from './support/fastapi-fixture.mjs';
 
 // Synthetic fixture credential, identical to the allowlisted security-suite
 // fixture (security/support.py); the throwaway loopback database is deleted
@@ -23,11 +17,8 @@ const PASSWORD = 'correct-horse-battery';
 const EMAIL = `owner-${process.pid}-${Date.now()}@e2e.test`;
 const state = {};
 
-let envFailure = null;
-let serverProcess = null;
-let bootstrapPath = null;
+let fixture = null;
 let baseUrl = null;
-let databasePath = null;
 
 function plainVault() {
   return {
@@ -64,95 +55,13 @@ function closedPort() {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function startServer(t) {
-  if (envFailure) {
-    t.skip(`isolated FastAPI environment unavailable: ${envFailure}`);
-    return false;
-  }
-  if (baseUrl) return true;
-  bootstrapPath = path.join(os.tmpdir(), `specwatt-zcode-e2e-${process.pid}.py`);
-  databasePath = path.join(os.tmpdir(), `specwatt-zcode-e2e-${process.pid}.sqlite3`);
-  fs.writeFileSync(
-    bootstrapPath,
-    `import asyncio, os, socket, sys, threading
-from pathlib import Path
-sys.path.insert(0, ${JSON.stringify(repoRoot)})
-import uvicorn
-from backend.specwatt_api.app import create_app
-from backend.specwatt_api.clock import SystemClock
-
-app = create_app(Path(${JSON.stringify(databasePath)}), SystemClock())
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.bind(("127.0.0.1", 0))
-sock.listen(2048)
-port = sock.getsockname()[1]
-server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
-
-def run():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(server.serve(sockets=[sock]))
-
-thread = threading.Thread(target=run, daemon=True)
-thread.start()
-print("PORT=%d" % port, flush=True)
-thread.join()
-`,
-    'utf8',
-  );
-  const child = spawn('python', [bootstrapPath], { cwd: repoRoot, stdio: ['ignore', 'pipe', 'pipe'] });
-  let output = '';
-  let spawnError = null;
-  child.stdout.on('data', (chunk) => {
-    output += String(chunk);
-  });
-  child.stderr.on('data', (chunk) => {
-    output += String(chunk);
-  });
-  // Without this handler a missing python binary would crash the whole suite
-  // with an unhandled 'error' event instead of skipping.
-  child.on('error', (issue) => {
-    spawnError = String(issue);
-  });
-  const deadline = Date.now() + 30000;
-  while (Date.now() < deadline && !baseUrl) {
-    if (spawnError || child.exitCode !== null) break;
-    const match = output.match(/PORT=(\d+)/);
-    if (match) {
-      baseUrl = `http://127.0.0.1:${match[1]}`;
-      break;
-    }
-    await wait(100);
-  }
-  if (!baseUrl) {
-    child.kill();
-    envFailure = spawnError || output.slice(-2000) || 'server did not report a port';
-    serverProcess = null;
-    t.skip(`isolated FastAPI environment unavailable: ${envFailure}`);
-    return false;
-  }
-  serverProcess = child;
-  try {
-    const health = await fetch(baseUrl + '/health');
-    const body = await health.json();
-    assert.equal(health.status, 200);
-    assert.equal(body.hardware_transport, false);
-  } catch (issue) {
-    child.kill();
-    serverProcess = null;
-    baseUrl = null;
-    envFailure = `server did not become healthy: ${issue}`;
-    t.skip(`isolated FastAPI environment unavailable: ${envFailure}`);
-    return false;
-  }
+async function startServer() {
+  if (!fixture) { fixture = await startFastApi(); baseUrl = fixture.baseUrl; }
+  fixture.assertAlive();
   return true;
 }
 
-after(() => {
-  if (serverProcess) serverProcess.kill();
-  if (databasePath) fs.rmSync(databasePath, { force: true });
-  if (bootstrapPath) fs.rmSync(bootstrapPath, { force: true });
-});
+after(async () => { await fixture?.close(); });
 
 test('real FastAPI loopback: register, create simulator, fresh snapshot with protected CH3', async (t) => {
   if (!(await startServer(t))) return;
@@ -161,7 +70,7 @@ test('real FastAPI loopback: register, create simulator, fresh snapshot with pro
   await owner.authenticate('register', EMAIL, PASSWORD);
   assert.ok(vault.token);
   assert.deepEqual(await owner.controllers(), []);
-  const created = await owner.createSimulator('E2E стенд');
+  const created = await owner.createSimulator('E2E СЃС‚РµРЅРґ');
   assert.equal(created.source, 'simulator');
   const snapshot = await owner.snapshot(created.id);
   assert.equal(snapshot.freshness, 'fresh');
@@ -176,12 +85,11 @@ test('real FastAPI loopback: register, create simulator, fresh snapshot with pro
   state.controllerId = created.id;
 });
 
-// Failures in the setup test must skip the dependents with a clear reason
-// instead of dying on an undefined shared-state destructuring.
+// Setup failures remain failures, with an explicit dependency explanation
+// rather than undefined shared-state destructuring or skipped coverage.
 function prereq(t) {
   if (!state.owner || !state.controllerId) {
-    t.skip('prerequisite setup test did not complete');
-    return false;
+    assert.fail('prerequisite setup test did not complete');
   }
   return true;
 }
@@ -237,7 +145,10 @@ test('schedule evaluate, create, cancel and an explicit tick that never fabricat
   // last sample); refresh telemetry so this test does not inherit the clock
   // position of whatever ran before it.
   await owner.sample(controllerId, await owner.snapshot(controllerId));
-  await wait(2300);
+  // Regression: original daemon fixture exited during a >5s quiet interval.
+  // Keep real HTTP coverage and default file concurrency; do not shorten this.
+  await wait(6100);
+  fixture.assertAlive();
   const tick = await api.tick(controllerId);
   assert.ok(tick.processed.some((row) => row.schedule_id === due.id && row.result === 'dispatched_start'));
   const listedAfterTick = await api.list(controllerId);
@@ -287,7 +198,7 @@ test('a server-side timeout outcome stays truthful and never blocks later manual
   assert.equal(retry.status, 'requested');
 });
 
-test('BOLA isolation: another account cannot read or command someone else’s controller', async (t) => {
+test('BOLA isolation: another account cannot read or command someone elseвЂ™s controller', async (t) => {
   if (!(await startServer(t))) return;
   if (!prereq(t)) return;
   const stranger = client(plainVault());
@@ -377,4 +288,12 @@ test('offline port: safe GET retried once over real transport, mutation never re
   const reconnected = client(state.vault);
   const rows = await reconnected.controllers();
   assert.equal(rows.length, 1);
+});
+
+test('the same HTTP fixture serves concurrent independent reads without losing its lifetime',async()=>{
+ await startServer();
+ const snapshots=await Promise.all(Array.from({length:8},()=>state.owner.snapshot(state.controllerId)));
+ fixture.assertAlive();
+ assert.equal(snapshots.length,8);
+ for(const snapshot of snapshots){assert.equal(snapshot.source,'simulator');assert.equal(snapshot.channels[2].protected,true);}
 });

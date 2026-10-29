@@ -113,13 +113,16 @@ export function useWords() {
 export function Shell({
   children,
   active,
+  demoEvents = true,
 }: {
   children: React.ReactNode;
   active?: string;
   header?: boolean;
+  demoEvents?: boolean;
 }) {
   const { data, ready, storageError } = useSpec();
   const { width } = useWindowDimensions();
+  const route = usePathname();
   const w = useWords();
   if (!ready)
     return (
@@ -141,7 +144,7 @@ export function Shell({
       style={{ flex: 1 }}
     >
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-        <ScrollView
+        <ScrollView key={route}
           contentContainerStyle={[s.body, {paddingHorizontal: width < 360 ? 16 : 20}]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -158,7 +161,7 @@ export function Shell({
             </View>
           )}
 
-          {data.events[0]?.kind === "error" && (
+          {demoEvents && data.events[0]?.kind === "error" && (
             <View accessibilityRole="alert" style={s.warning}>
               <Copy size={13}>
                 {data.events[0].code === "peak-exceeded"
@@ -190,7 +193,8 @@ const nav = [
 ] as const;
 export function BottomNav({ active }: { active?: string }) {
   const {width,fontScale}=useWindowDimensions();
-  const large=fontScale>1.2;
+  const [labelsWrap,setLabelsWrap]=useState(false);
+  const large=fontScale>1.2||labelsWrap;
 
   const path = usePathname(),
     w = useWords();
@@ -219,6 +223,7 @@ export function BottomNav({ active }: { active?: string }) {
             </AnimatedSelection>
             {!large&&<Copy
               size={12}
+              onLayout={event=>{if(event.nativeEvent.layout.height>22)setLabelsWrap(true);}}
               style={{
                 fontSize: 12,
                 lineHeight: 16,

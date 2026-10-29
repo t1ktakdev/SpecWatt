@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -10,149 +10,24 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { ApiError, BrainClient, createTokenVault } from "../specwatt/api";
-import type {
-  ServerCommand,
-  ServerController,
-  ServerSnapshot,
-} from "../specwatt/api";
 import { Copy, CTA, Panel } from "../specwatt/ui";
 import { sty, theme } from "../specwatt/theme";
 import { useSpec } from "../specwatt/store";
-import ServerSchedules from "./server-schedules";
-import {
-  createServerRequestScope,
-  appendCommand,
-  blocksNewCommands,
-  isAmbiguousMutationOutcome,
-  isSnapshotFresh,
-  isSessionFailure,
-} from "../specwatt/server-request-scope";
-import type { ServerSession } from "../specwatt/server-request-scope";
+import { useLive, defaultServerUrl } from "../specwatt/live-context";
 import { t } from "../specwatt/i18n";
+import {Details} from "./live-controls";
 
 export default function ServerScreen() {
-  const { data } = useSpec();
+  const { data, enterDemo } = useSpec();
   const w = (ru: string, ky: string) => (data.locale === "ky" ? ky : ru);
-  const vault = useMemo(() => createTokenVault(Platform.OS !== "web"), []);
-  const initial = useMemo(
-    () =>
-      new BrainClient({
-        baseUrl: __DEV__
-          ? Platform.OS === "android"
-            ? "http://10.0.2.2:8000"
-            : "http://127.0.0.1:8000"
-          : "https://localhost:8000",
-        development: __DEV__,
-        vault,
-      }),
-    [vault],
-  );
-  const [baseUrl, setBaseUrl] = useState(initial.baseUrl);
-  const scope = useMemo(() => createServerRequestScope<BrainClient>(), []);
-  const [session, setSession] = useState<ServerSession<BrainClient> | null>(null);
-  const client = session?.connection ?? null;
-  const schedulerApi = useMemo(() => client?.scheduler() ?? null, [client]);
-  const [mode, setMode] = useState<"login" | "register">("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [name, setName] = useState("");
-  const [controllers, setControllers] = useState<ServerController[]>([]);
-  const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(null);
-  const [commands, setCommands] = useState<ServerCommand[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [uncertain, setUncertain] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const lock = useRef(false);
-  const serial = useRef(0);
-  const mounted = useRef(true);
-
-  function clearSession(expected?: ServerSession<BrainClient> | null) {
-    if (expected && !scope.isSession(expected)) return;
-    scope.invalidate();
-    setSession(null);
-    setControllers([]);
-    setSnapshot(null);
-    setCommands([]);
-    setUncertain(false);
-  }
-  async function run(action: () => Promise<void>, commandAction = false) {
-    if (lock.current) return;
-    lock.current = true;
-    setBusy(true);
-    setError("");
-    const startedSession = session;
-    try {
-      await action();
-    } catch (failure) {
-      if (startedSession && !scope.isSession(startedSession)) return;
-      const code =
-        failure instanceof ApiError ? failure.code : "operation_failed";
-      if (commandAction && isAmbiguousMutationOutcome(code)) setUncertain(true);
-      if (isSessionFailure(code)) clearSession(startedSession);
-      if (mounted.current) setError(code);
-    } finally {
-      lock.current = false;
-      if (mounted.current) setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    mounted.current = true;
-    const restored = scope.activate(initial);
-    const flight = scope.begin();
-    void (async () => {
-      try {
-        if (!(await initial.hasSession())) return;
-        const rows = await initial.controllers({ signal: flight.signal });
-        if (mounted.current && scope.isSession(restored)) {
-          setSession(restored);
-          setControllers(rows);
-        }
-      } catch (failure) {
-        if (mounted.current && scope.isSession(restored))
-          setError(
-            failure instanceof ApiError ? failure.code : "operation_failed",
-          );
-      } finally {
-        flight.done();
-      }
-    })();
-    return () => {
-      mounted.current = false;
-      flight.done();
-      scope.invalidate();
-    };
-  }, [initial, scope]);
-
-  const hasSnapshot = snapshot !== null;
-  useEffect(() => {
-    // Freshness display only matters while a snapshot is on screen; ticking
-    // every second otherwise re-renders the whole workspace for nothing.
-    if (!hasSnapshot) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [hasSnapshot]);
-
-  async function refresh(id: string, expected = session, select = false) {
-    const ticket = select ? scope.select(expected, id) : scope.refresh(expected, id);
-    if (!ticket || !expected) return;
-    const connection = expected.connection;
-    const flight = scope.begin();
-    try {
-      const value = await connection.snapshot(id, { signal: flight.signal });
-      const history = await connection.commands(id, { signal: flight.signal });
-      if (!mounted.current || !scope.canCommit(ticket)) return;
-      setSnapshot(value);
-      setCommands(history);
-      setUncertain(false);
-    } finally {
-      flight.done();
-    }
-  }
-
+  const {workspace,state}=useLive();
+  const {client,controllers,busy,error}=state;
+  const [baseUrl,setBaseUrl]=useState(defaultServerUrl);
+  const [mode,setMode]=useState<"login"|"register">("login");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [showPassword,setShowPassword]=useState(false);
+  const [name,setName]=useState("");
   const locale = data.locale;
   const messages = useMemo<Record<string, string>>(() => {
     const w = (ru: string, ky: string) => (locale === "ky" ? ky : ru);
@@ -280,24 +155,6 @@ export default function ServerScreen() {
     ),
     };
   }, [locale]);
-  const status = (value: string) =>
-    ({
-      requested: w("Запрошена", "Суралды"),
-      sent: w("Отправлена", "Жөнөтүлдү"),
-      acknowledged: w("Подтверждена симулятором", "Симулятор ырастады"),
-      rejected: w("Отклонена", "Четке кагылды"),
-      cancelled: w("Отменена до отправки", "Жөнөтүлгөнгө чейин жокко чыгарылды"),
-      timeout: w("Тайм-аут", "Күтүү мөөнөтү бүттү"),
-      "transport-error": w("Ошибка передачи", "Жөнөтүү катасы"),
-      reconciled: w("Сверена с телеметрией", "Телеметрия менен текшерилди"),
-    })[value] ?? value;
-  // Terminal timeout/transport-error outcomes stay visible in the history but
-  // must not lock the workspace forever: the server only refuses new commands
-  // while one is genuinely in flight (requested/sent).
-  const waiting =
-    commands.some((command) => blocksNewCommands(command.status)) || uncertain;
-  const measuredFresh = isSnapshotFresh(snapshot, now / 1000);
-
   return (
     <SafeAreaView style={sty.screen}>
       <KeyboardAvoidingView
@@ -324,8 +181,8 @@ export default function ServerScreen() {
             </Copy>
             <Copy muted>
               {w(
-                "Отдельное пространство FastAPI. Это не ESP32 и не физические измерения. Данные и команды не смешиваются с локальным демо.",
-                "FastAPI үчүн өзүнчө мейкиндик. Бул ESP32 жана чыныгы өлчөө эмес. Маалыматтар жана буйруктар жергиликтүү демо менен аралашпайт.",
+                "Войдите и выберите свой контроллер. Его состояние появится во всех вкладках. Здесь используется серверная симуляция, а не физические измерения.",
+                "Кирип, контроллерди тандаңыз. Анын абалы бардык өтмөктөрдө көрүнөт. Бул сервердик симуляция, чыныгы өлчөө эмес.",
               )}
             </Copy>
           </Panel>
@@ -358,12 +215,10 @@ export default function ServerScreen() {
                 keyboardType="url"
                 maxLength={300}
               />
-              <Copy muted size={12}>
-                {w(
-                  "Android-эмулятор: 10.0.2.2. Через adb reverse: localhost. На физическом устройстве используйте HTTPS. Веб-доступ требует явного CORS origin на сервере.",
-                  "Android эмулятору: 10.0.2.2. adb reverse аркылуу: localhost. Чыныгы түзмөктө HTTPS колдонуңуз. Веб үчүн серверде так CORS origin керек.",
-                )}
-              </Copy>
+              <Details label={w("О подключении", "Байланыш жөнүндө")}>
+                <Copy muted size={14}>{w("Адрес и выбранный контроллер действуют в текущем сеансе. В веб-превью после перезагрузки страницы потребуется войти и выбрать контроллер снова. Пароль не сохраняется.", "Дарек жана тандалган контроллер учурдагы сеанста иштейт. Веб-барак жаңыртылгандан кийин кайра кирип, контроллерди тандоо керек. Сырсөз сакталбайт.")}</Copy>
+                <Copy muted size={14}>{w("Локальная разработка: Android-эмулятор 10.0.2.2, веб 127.0.0.1. Веб-доступ требует разрешённого адреса CORS на сервере.", "Жергиликтүү иштеп чыгуу: Android эмулятору 10.0.2.2, веб 127.0.0.1. Веб үчүн серверде уруксат берилген CORS дареги керек.")}</Copy>
+              </Details>
               <View style={[sty.row, { gap: 10 }]}>
                 {(["login", "register"] as const).map((value) => (
                   <Pressable
@@ -371,7 +226,7 @@ export default function ServerScreen() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: mode === value }}
                     disabled={busy}
-                    onPress={() => { setMode(value); setPassword(""); setShowPassword(false); setError(""); }}
+                    onPress={() => { setMode(value); setPassword(""); setShowPassword(false);  }}
                     style={[
                       sty.card,
                       {
@@ -433,26 +288,7 @@ export default function ServerScreen() {
                     : w("Создать серверный аккаунт", "Серверде аккаунт түзүү")
                 }
                 onPress={() => {
-                  void run(async () => {
-                    const connection = new BrainClient({
-                      baseUrl,
-                      development: __DEV__,
-                      vault,
-                    });
-                    const signedIn = scope.activate(connection);
-                    const flight = scope.begin();
-                    try {
-                      await connection.authenticate(mode, email, password, { signal: flight.signal });
-                      const rows = await connection.controllers({ signal: flight.signal });
-                      if (mounted.current && scope.isSession(signedIn)) {
-                        setSession(signedIn);
-                        setControllers(rows);
-                      }
-                    } finally {
-                      flight.done();
-                      if (mounted.current) { setPassword(""); setShowPassword(false); }
-                    }
-                  });
+                  void workspace.authenticate(baseUrl,mode,email,password).finally(()=>{setPassword("");setShowPassword(false);});
                 }}
               />
               <Copy muted size={12}>
@@ -464,277 +300,20 @@ export default function ServerScreen() {
             </>
           ) : (
             <>
-              <Copy muted size={12}>
-                {client.baseUrl}
-              </Copy>
-              <Copy size={22}>
-                {w("Мои симуляторы", "Менин симуляторлорум")}
-              </Copy>
-              {controllers.map((controller) => (
-                <CTA
-                  key={controller.id}
-                  disabled={busy}
-                  secondary
-                  label={controller.name}
-                  onPress={() => {
-                    void run(() => refresh(controller.id, session, true));
-                  }}
-                />
-              ))}
-              {!controllers.length && (
-                <Copy muted>
-                  {w("Пока нет контроллеров.", "Азырынча контроллер жок.")}
-                </Copy>
-              )}
-              <TextInput
-                accessibilityLabel={w(
-                  "Название симулятора",
-                  "Симулятордун аты",
-                )}
-                editable={!busy}
-                style={sty.field}
-                value={name}
-                onChangeText={setName}
-                maxLength={80}
-                placeholder={w(
-                  "Название нового симулятора",
-                  "Жаңы симулятордун аты",
-                )}
-                placeholderTextColor={theme.dim}
-              />
-              <CTA
-                disabled={busy}
-                secondary
-                label={w(
-                  "Создать серверный симулятор",
-                  "Сервердик симулятор түзүү",
-                )}
-                onPress={() => {
-                  void run(async () => {
-                    const created = await client.createSimulator(name);
-                    setName("");
-                    setControllers(await client.controllers());
-                    await refresh(created.id, session, true);
-                  });
-                }}
-              />
-              {snapshot && (
-                <>
-                  <Panel style={{ gap: 9 }}>
-                    <Copy size={23}>{snapshot.name}</Copy>
-                    <Copy accent size={35}>
-                      {measuredFresh && snapshot.total_watts !== null
-                        ? snapshot.total_watts.toFixed(1).replace(".", ",")
-                        : "—"}{" "}
-                      {w("Вт", "Вт")}
-                    </Copy>
-                    <Copy muted>
-                      {measuredFresh
-                        ? w(
-                            "Телеметрия симулятора · свежая",
-                            "Симулятордун жаңы телеметриясы",
-                          )
-                        : w(
-                            "Телеметрия устарела или результат неизвестен",
-                            "Телеметрия эскирген же жыйынтык белгисиз",
-                          )}
-                    </Copy>
-                    <Copy muted size={12}>
-                      {w("Допустимый пик: ", "Чектүү чоку: ")}
-                      {snapshot.peak_watts} {w("Вт", "Вт")}
-                    </Copy>
-                  </Panel>
-                  {snapshot.channels.map((channel) => (
-                    <Panel key={channel.id} style={{ gap: 8 }}>
-                      <Copy size={18}>
-                        {channel.id} · {channel.assigned.name}
-                      </Copy>
-                      <Copy muted>
-                        {channel.protected
-                          ? w(
-                              "Защищён · управление запрещено",
-                              "Корголгон · башкарууга тыюу салынат",
-                            )
-                          : measuredFresh
-                            ? `${channel.watts?.toFixed(1).replace(".", ",")} ${w("Вт", "Вт")}`
-                            : w("Нет свежих измерений", "Жаңы өлчөө жок")}
-                      </Copy>
-                      {!channel.protected && (
-                        <CTA
-                          disabled={busy || waiting || !measuredFresh}
-                          secondary
-                          label={
-                            (channel.watts ?? 0) > 0
-                              ? w("Запросить выключение", "Өчүрүүнү суроо")
-                              : w("Запросить включение", "Күйгүзүүнү суроо")
-                          }
-                          onPress={() => {
-                            void run(async () => {
-                              const ticket = scope.refresh(session, snapshot.controller_id);
-                              const key = `mobile-${Date.now()}-${++serial.current}`;
-                              const command = await client.command(
-                                snapshot.controller_id,
-                                channel.id as "CH1" | "CH2",
-                                !(channel.watts! > 0),
-                                key,
-                              );
-                              if (!scope.canCommit(ticket)) return;
-                              setCommands((current) => appendCommand(current, command));
-                            }, true);
-                          }}
-                        />
-                      )}
-                      {!channel.protected && (
-                        <CTA
-                          disabled={busy || waiting}
-                          secondary
-                          label={channel.assigned.allow_auto
-                            ? w("Запретить автоматизацию и расписания", "Автоматикага жана жадыбалга тыюу салуу")
-                            : w("Разрешить автоматизацию и расписания", "Автоматикага жана жадыбалга уруксат берүү")}
-                          onPress={() => {
-                            void run(async () => {
-                              const ticket = scope.refresh(session, snapshot.controller_id);
-                              const next = await client.automationConsent(
-                                snapshot.controller_id, channel, !channel.assigned.allow_auto,
-                              );
-                              if (!scope.canCommit(ticket)) return;
-                              setSnapshot(next);
-                            }, true);
-                          }}
-                        />
-                      )}
-                    </Panel>
-                  ))}
-                  <Copy muted size={12}>
-                    {w(
-                      "Запрос не меняет показания. Следующая кнопка явно запускает отправку и подтверждение серверным симулятором.",
-                      "Суроо көрсөткүчтөрдү өзгөртпөйт. Кийинки баскыч сервердик симулятордо жөнөтүүнү жана ырастоону иштетет.",
-                    )}
-                  </Copy>
-                  <CTA
-                    disabled={
-                      busy ||
-                      !commands.some(
-                        (command) => command.status === "requested",
-                      )
-                    }
-                    label={w(
-                      "Отправить и подтвердить · шаг симулятора",
-                      "Жөнөтүү жана ырастоо · симулятор кадамы",
-                    )}
-                    onPress={() => {
-                      void run(async () => {
-                        const ticket = scope.refresh(session, snapshot.controller_id);
-                        const next = await client.step(snapshot.controller_id);
-                        const history = await client.commands(snapshot.controller_id);
-                        if (!scope.canCommit(ticket)) return;
-                        setSnapshot(next);
-                        setCommands(history);
-                      }, true);
-                    }}
-                  />
-                  <CTA
-                    disabled={busy}
-                    secondary
-                    label={w(
-                      "Обновить состояние и историю команд",
-                      "Абалды жана буйруктар тарыхын жаңыртуу",
-                    )}
-                    onPress={() => {
-                      void run(() => refresh(snapshot.controller_id));
-                    }}
-                  />
-                  <CTA
-                    disabled={busy}
-                    secondary
-                    label={w(
-                      "Симулятор: повторить последний образец телеметрии",
-                      "Симулятор: акыркы телеметрия үлгүсүн кайталоо",
-                    )}
-                    onPress={() => {
-                      void run(async () => {
-                        const ticket = scope.refresh(session, snapshot.controller_id);
-                        const next = await client.sample(
-                          snapshot.controller_id,
-                          snapshot,
-                        );
-                        const history = await client.commands(snapshot.controller_id);
-                        if (!scope.canCommit(ticket)) return;
-                        setSnapshot(next);
-                        setCommands(history);
-                        setUncertain(false);
-                      }, true);
-                    }}
-                  />
-                  <Copy muted size={12}>
-                    {w(
-                      "Образец создаёт серверный симулятор из последних значений. Он не подтверждает старые команды и не опрашивает оборудование.",
-                      "Үлгүнү сервердик симулятор акыркы маанилерден түзөт. Ал эски буйруктарды ырастабайт жана жабдууну сурамжылабайт.",
-                    )}
-                  </Copy>
-                  {uncertain && (
-                    <Copy accent>
-                      {w(
-                        "Результат запроса неизвестен. Обновите историю; автоматического повтора нет.",
-                        "Суроонун жыйынтыгы белгисиз. Тарыхты жаңыртыңыз; автоматтык кайталоо жок.",
-                      )}
-                    </Copy>
-                  )}
-                  {schedulerApi && (
-                    <ServerSchedules
-                      key={snapshot.controller_id}
-                      api={schedulerApi}
-                      controllerId={snapshot.controller_id}
-                      locale={data.locale}
-                      onChanged={() => refresh(snapshot.controller_id, session)}
-                      onSessionExpired={() => clearSession(session)}
-                    />
-                  )}
-                  <Copy size={21}>
-                    {w("Команды сервера", "Сервердин буйруктары")}
-                  </Copy>
-                  {commands.slice(0, 10).map((command) => (
-                    <Panel key={command.id} style={{ gap: 5 }}>
-                      <Copy>
-                        {command.channel_id} ·{" "}
-                        {command.on
-                          ? w("Включить", "Күйгүзүү")
-                          : w("Выключить", "Өчүрүү")}
-                      </Copy>
-                      <Copy accent>{status(command.status)}</Copy>
-                      <Copy muted size={12}>
-                        {command.transitions
-                          .map((step) => status(step.status))
-                          .join(" → ")}
-                      </Copy>
-                      {!!command.reason && (
-                        <Copy muted size={12}>
-                          {messages[command.reason] ?? command.reason}
-                        </Copy>
-                      )}
-                    </Panel>
-                  ))}
-                </>
-              )}
-              <CTA
-                disabled={busy}
-                secondary
-                label={w(
-                  "Выйти и удалить локальный токен",
-                  "Чыгуу жана жергиликтүү токенди өчүрүү",
-                )}
-                onPress={() => {
-                  void run(async () => {
-                    try {
-                      await client.logout();
-                    } finally {
-                      clearSession();
-                    }
-                  });
-                }}
-              />
+              <Copy muted size={14}>{client.baseUrl}</Copy>
+              <Copy size={24}>{w("Мои контроллеры", "Менин контроллерлорум")}</Copy>
+              {!controllers.length && <Panel style={{gap:8}}><Copy>{w("Контроллеров пока нет", "Азырынча контроллер жок")}</Copy><Copy muted>{w("Создайте серверный симулятор, чтобы проверить весь сценарий без оборудования.", "Жабдуусуз текшерүү үчүн сервердик симулятор түзүңүз.")}</Copy></Panel>}
+              {controllers.map(controller=><CTA key={controller.id} secondary disabled={busy||state.refreshing} label={controller.name} onPress={()=>{
+                void workspace.select(controller.id).then(()=>router.replace("/home"));
+              }}/>)}
+              <TextInput accessibilityLabel={w("Название симулятора", "Симулятордун аты")} editable={!busy} style={sty.field} value={name} onChangeText={setName} maxLength={80} placeholder={w("Название нового симулятора", "Жаңы симулятордун аты")} placeholderTextColor={theme.dim}/>
+              <CTA secondary disabled={busy||!name.trim()} label={w("Создать серверный симулятор", "Сервердик симулятор түзүү")} onPress={()=>{
+                void workspace.create(name).then(()=>{if(workspace.getState().selectedId)router.replace("/home");});
+              }}/>
+              <CTA secondary disabled={busy} label={w("Выйти и удалить локальный токен", "Чыгуу жана жергиликтүү токенди өчүрүү")} onPress={()=>void workspace.logout()}/>
             </>
           )}
+          <CTA secondary label={w("Перейти в DEMO", "DEMO режимине өтүү")} onPress={()=>{workspace.demo();enterDemo();router.replace("/home");}}/>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

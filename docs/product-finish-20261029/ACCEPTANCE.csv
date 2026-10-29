@@ -1,0 +1,21 @@
+﻿Priority,Area,Scenario,Acceptance,Evidence,Status,ActualEvidence
+P0,Test runner,default npm test,parallel suite reproduces and is fixed; >=2 independent green runs; focused E2E remains real,fail if exit !=0 or skipped,PASS (WEB/local),verified-test-1/2.log: 254/254; http-stress-1/2.log: 10/10 each
+P0,Owner isolation,server controllers,A cannot read/command B IDs; 401/stale logout safe,security/HTTP test,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P0,Commands,devices/detail,POST requested != ACK; one uncertain POST no retries; GET reconciles,real HTTP + UI,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P0,CH3,all tabs,"observe-only, no enabling controls or API actuation",backend and UI tests,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Mode separation,all tabs,"offline DEMO local, SERVER simulator authenticated, no cross-store mutation",WEB+unit,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Home,SERVER fresh,status/source/last update/current W/peak; correct chart and top devices,same-scene before-after,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Home,SERVER stale/offline,old value not shown as live; no fake zero or online badge,offline/30s sample,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Devices,CH1/CH2,"clear request/pending/ACK, safe per-device data and SVG fallback",WEB+HTTP,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Autopilot,permission/hold,"only backend truth, CH3 excluded, no fake global toggle",API tests,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Plan,evaluate/create/cancel,local user time/timezone with safe UTC conversion and explanations,WEB+API,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Journal,events/filters,"real controller-scoped events, statuses, no fabricated history",unit+WEB,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P1,Analytics,Wh estimate,"correct trapezoid and gap/coverage, no pretend real kWh savings",numeric test,PASS (WEB/local),live-history + power-chart-range unit tests; simulator-only Wh
+P2,Visual,Warm Graphite,"controlled theme tokens, crisp SVG and mature motion, no childish redesign",matched contact sheet,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P2,Localization,RU/KY,"no missing critical strings, no truncation at 320/393/440",screenshots,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P2,Accessibility,text 1.5 + reduce motion,"legible, touch targets, focus/labels, no essential animated content",WEB and native if available,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P2,Performance,long event list,"pagination/virtualization when needed, stable scroll and updates",stress test,PARTIAL: bounded incremental display; no full virtualization,"20-event incremental display, workspace max500; not a native perf benchmark"
+P2,Resilience,"expired session,429,server loss",safe disabled states/recovery no false success,WEB+HTTP,PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable
+P3,Native Android,emulator,verify real native only if emulator exists; otherwise clearly BLOCKED,native evidence,NOT VERIFIED,No emulator found in PATH/standard SDK; no physical device access
+P3,Dependencies,expo doctor/npm audit,"report exact 19/20 and 9 advisories or tested improvement, no gate suppression",raw exit codes,"OPEN: audit=1, doctor=1","doctor.log:19/20,14 patches; audit.log:9 entries; audit-baseline.log:0"
+P3,Git,handoff,"clean own worktree and attributable commits, original branch intact, no push/merge","git log,status",PASS (WEB/local),accepted-web/checks.json + manifest.json; backend/security/unit tests as applicable

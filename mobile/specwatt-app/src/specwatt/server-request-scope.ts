@@ -70,6 +70,7 @@ export function createServerRequestScope<C>() {
     isSession,
     select(session: ServerSession<C> | null, id: string): Request<C> | null {
       if (!isSession(session)) return null;
+      abortInflight();
       selectedId = id; selection++;
       return issue(session, id);
     },
