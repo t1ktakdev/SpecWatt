@@ -140,7 +140,7 @@ function PowerHistory({rows,locale,nowSeconds}:{rows:ServerMeasurement[];locale:
     {points.length<2?<Copy muted>{w("Нужно хотя бы два образца. История появится после явных действий симулятора.", "Кеминде эки үлгү керек. Тарых симулятордун аракеттеринен кийин чыгат.")}</Copy>:<>
       <Copy muted size={14}>{w("Пик в загруженной истории", "Жүктөлгөн тарыхтагы чоку")}: {number(peak,locale)} {w("Вт", "Вт")}</Copy>
       <View accessible accessibilityLabel={points.map(p=>`${stamp(p.t,locale)}: ${number(p.p,locale)} Вт`).join("; ")}>
-        <Svg width="100%" height={128} viewBox="0 0 280 128" accessible={false}>
+        <Svg width="100%" height={128} viewBox="0 0 280 128" aria-hidden={true} focusable={false}>
           <Line x1={12} x2={268} y1={108} y2={108} stroke={theme.line}/>
           {points.map((p,i)=><React.Fragment key={i}>{i>0&&p.t>points[i-1].t&&p.t-points[i-1].t<=60&&<Path d={`M${x(points[i-1].t)} ${y(points[i-1].p)} L${x(p.t)} ${y(p.p)}`} stroke={theme.peach} strokeWidth={2}/>}<Circle cx={x(p.t)} cy={y(p.p)} r={3} fill={theme.peach}/></React.Fragment>)}
         </Svg>

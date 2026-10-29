@@ -73,6 +73,7 @@ try{
   await stop();await start();
   const ky=locale==='ky',context=await browser.newContext({viewport:{width,height:852},deviceScaleFactor:1,reducedMotion:'reduce',timezoneId:'Asia/Bishkek'}),page=await context.newPage(),errors=[];
   lastPage=page;page.on('pageerror',e=>errors.push(String(e)));
+  page.on('console',m=>{if(m.type()==='error'&&!/Failed to load resource.*(net::ERR|status of (401|409|429))/.test(m.text()))errors.push(m.text());});
   await page.addInitScript(state=>{if(!sessionStorage.getItem('seeded')){localStorage.setItem('specwatt-mobile-v1',JSON.stringify(state));sessionStorage.setItem('seeded','1');}},demoState(locale));
   await register(page,locale);await capture(page,'controllers-empty',locale,width);
   await create(page,locale);await capture(page,'home',locale,width);
@@ -92,10 +93,13 @@ try{
   await nav('Журнал');await page.getByText(ky?'Сервердин окуялары':'События сервера',{exact:true}).filter({visible:true}).waitFor();await capture(page,'journal',locale,width);
   for(const [tab,name]of [['autopilot','Автопилот'],['plan','План']]){await nav(name);await capture(page,tab,locale,width);}
   for(const scale of [1.3,1.5]){
-   const css=await page.addStyleTag({content:`[dir="auto"] {font-size:${scale*100}% !important; line-height:1.4 !important;}`});
+   await page.evaluate(scale=>{
+    const apply=()=>{const nodes=[...document.querySelectorAll('[dir="auto"]')];const sizes=nodes.map(n=>Number(n.dataset.qaFont)||parseFloat(getComputedStyle(n).fontSize));nodes.forEach((n,i)=>{n.dataset.qaFont=String(sizes[i]);n.style.setProperty('font-size',`${sizes[i]*scale}px`,'important');n.style.setProperty('line-height',`${sizes[i]*scale*1.4}px`,'important');});};
+    window.qaTextObserver=new MutationObserver(apply);window.qaTextObserver.observe(document.body,{subtree:true,childList:true});apply();
+   },scale);
    for(const [name,label]of [['home',ky?'Башкы':'Главная'],['devices',ky?'Түзмөктөр':'Устройства'],['autopilot','Автопилот'],['plan','План'],['journal','Журнал']]){await nav(label);await capture(page,`${name}-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});}
    await nav(ky?'Түзмөктөр':'Устройства');await page.getByRole('button',{name:/CH1.*(Подробнее|Кененирээк)/}).click();await capture(page,`detail-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});
-   await css.evaluate(n=>n.remove());
+   await page.evaluate(()=>{window.qaTextObserver.disconnect();for(const n of document.querySelectorAll('[data-qa-font]')){n.style.setProperty('font-size',`${n.dataset.qaFont}px`);n.style.setProperty('line-height',`${Number(n.dataset.qaFont)*1.4}px`);delete n.dataset.qaFont;}});
   }
   if(locale==='ru'&&width===393){
    await stop();await start(); // isolate fault/scheduler budget after visual matrix
