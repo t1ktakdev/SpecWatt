@@ -19,11 +19,13 @@ Acceptance (8 conditions):
 Review focus: delayed old-owner responses; mutation committed with lost reply; stale time and skew; missing/deleted controller; browser reload memory-only session.
 
 Tasks:
-- [ ] Baseline: install locked dependencies, run suites, export and capture six screens at RU/KY 320/393/440 before product edits.
-- [ ] P0 data: add failing tests for strict events/history and workspace lifecycle; implement BrainClient history methods, observable workspace and provider; run focused tests.
-- [ ] P0 UI: reuse auth form with shared workspace; source-aware route wrappers, Home/Devices/Journal, protected details, explicit command/step and honest system states. Real HTTP + browser acceptance before proceeding.
-- [ ] P1: reuse ServerSchedules on main Plan and permission/limits on Autopilot; no invented enabled state.
-- [ ] P2: refine source/status hierarchy, curated SVG, genuine power history and responsive layouts. Compare before/after evidence.
-- [ ] Verification and delivery: all required gates, current/history secrets, raw audit + baseline, Expo Doctor, WEB/Android exports; local commits, runbook/gaps/review.
+- [x] Baseline: install locked dependencies, run suites, export and capture six screens at RU/KY 320/393/440 before product edits.
+- [x] P0 data: add failing tests for strict events/history and workspace lifecycle; implement BrainClient history methods, observable workspace and provider; run focused tests.
+- [x] P0 UI: reuse auth form with shared workspace; source-aware route wrappers, Home/Devices/Journal, protected details, explicit command/step and honest system states. Real HTTP + browser acceptance before proceeding.
+- [x] P1: reuse ServerSchedules on main Plan and permission/limits on Autopilot; no invented enabled state.
+- [x] P2: refine source/status hierarchy, curated SVG, genuine power history and responsive layouts. Compare before/after evidence.
+- [x] Verification and delivery: all required gates, current/history secrets, raw audit + baseline, Expo Doctor, WEB/Android exports; local commits, runbook/gaps/review.
 
 Rulings: user has provided full design and requested immediate execution, so additional design approval is unnecessary. Native worktree tool cannot choose D:; explicit D: requirement takes precedence and git worktree was used. No physical phone, firmware, Stage1, push or PR mutation. No selected-ID persistence: session-memory selection is safer and revalidated after each auth; browser reload requires login as existing vault specifies.
+
+Delivery ruling: P0 and main P1 verified over real HTTP/WEB; P2 is reviewed WEB scope. Native fontScale/TalkBack and hardware remain explicitly unverified. Full logs, initial failures, matched screenshots and remaining limitations are in docs/live-ux-20261029 and outputs/live-ux.
