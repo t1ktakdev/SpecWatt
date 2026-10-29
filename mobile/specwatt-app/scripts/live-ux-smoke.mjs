@@ -41,6 +41,7 @@ async function capture(page,name,locale,width,extra={}){
 async function register(page,locale){
  const ky=locale==='ky';
  await page.goto(web+'/server');
+ await page.getByRole('textbox',{name:ky?'Сервердин дареги':'Адрес сервера',exact:true}).waitFor({timeout:60000});
  await capture(page,'signin',locale,page.viewportSize().width);
  await page.getByRole('textbox',{name:ky?'Сервердин дареги':'Адрес сервера',exact:true}).fill(base);
  await page.getByRole('button',{name:ky?'Катталуу':'Регистрация',exact:true}).click();
@@ -90,7 +91,14 @@ try{
   await capture(page,'acknowledged',locale,width);
   await nav('Журнал');await page.getByText(ky?'Сервердин окуялары':'События сервера',{exact:true}).filter({visible:true}).waitFor();await capture(page,'journal',locale,width);
   for(const [tab,name]of [['autopilot','Автопилот'],['plan','План']]){await nav(name);await capture(page,tab,locale,width);}
+  for(const scale of [1.3,1.5]){
+   const css=await page.addStyleTag({content:`[dir="auto"] {font-size:${scale*100}% !important; line-height:1.4 !important;}`});
+   for(const [name,label]of [['home',ky?'Башкы':'Главная'],['devices',ky?'Түзмөктөр':'Устройства'],['autopilot','Автопилот'],['plan','План'],['journal','Журнал']]){await nav(label);await capture(page,`${name}-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});}
+   await nav(ky?'Түзмөктөр':'Устройства');await page.getByRole('button',{name:/CH1.*(Подробнее|Кененирээк)/}).click();await capture(page,`detail-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});
+   await css.evaluate(n=>n.remove());
+  }
   if(locale==='ru'&&width===393){
+   await stop();await start(); // isolate fault/scheduler budget after visual matrix
    await nav('Устройства');await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
    await nav('Автопилот');await page.getByRole('button',{name:'Разрешить автоматизацию',exact:true}).nth(1).click();
    await page.getByRole('button',{name:'Запретить автоматизацию',exact:true}).waitFor();
@@ -127,13 +135,6 @@ try{
    await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();await page.getByText('Нужен вход на сервер',{exact:true}).filter({visible:true}).waitFor();await capture(page,'expired-session',locale,width);assert.equal(await page.getByText('QA Energy Lab',{exact:true}).filter({visible:true}).count(),0);checks.push('WEB: real token revocation clears owner data on 401');
   }
   assert.equal((await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1'))).includes('QA Energy Lab'),false,'server state never persisted into DEMO');
-  if(!(locale==='ru'&&width===393)){
-   for(const scale of [1.3,1.5]){
-    const css=await page.addStyleTag({content:`[dir="auto"] {font-size:${scale*100}% !important; line-height:1.4 !important;}`});
-    for(const [name,label]of [['home',ky?'Башкы':'Главная'],['devices',ky?'Түзмөктөр':'Устройства'],['autopilot','Автопилот'],['plan','План'],['journal','Журнал']]){await nav(label);await capture(page,`${name}-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});}
-    await css.evaluate(n=>n.remove());
-   }
-  }
   await page.getByRole('button',{name:ky?'DEMO режимине өтүү':'Перейти в DEMO',exact:true}).click();
   assert.equal(await page.getByText('СЕРВЕР · СИМУЛЯЦИЯ',{exact:true}).filter({visible:true}).count(),0);
   assert.equal(JSON.parse(await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1'))).source,'demo');

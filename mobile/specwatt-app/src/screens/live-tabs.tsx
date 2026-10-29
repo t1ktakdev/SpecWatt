@@ -55,7 +55,7 @@ export function LiveTabScreen({tab}:{tab:LiveTab}) {
         <Copy size={14}>{stamp(snapshot.measured_at,locale)} · {Intl.DateTimeFormat().resolvedOptions().timeZone}</Copy>
         {tab==="home"&&<Copy muted size={14}>{w("Покрытие", "Камтуу")}: {fresh?snapshot.channels.filter(ch=>ch.watts!==null).length:0}/3 · {w("Предел", "Чек")} {number(snapshot.peak_watts,locale)} {w("Вт", "Вт")}</Copy>}
       </Panel>}
-      {tab==="home"&&<PowerHistory rows={state.measurements} locale={locale}/>}
+      {tab==="home"&&<PowerHistory rows={state.measurements} locale={locale} nowSeconds={now/1000}/>}
       {tab==="autopilot"&&<>
         <Panel style={{gap:12,backgroundColor:theme.raised}}><Copy size={22}>{w("Правила управления", "Башкаруунун эрежелери")}</Copy><Copy muted>{w("Сервер проверяет каждую команду. Общего переключателя автопилота в API нет; расписания создаются отдельно в Плане.", "Сервер ар бир буйрукту текшерет. APIде жалпы автопилот которгучу жок; графиктер Планда өзүнчө түзүлөт.")}</Copy><Copy>{w("Предел мощности", "Кубат чеги")}: {number(snapshot.peak_watts,locale)} {w("Вт", "Вт")}</Copy><Copy>{w("Ручной приоритет", "Кол артыкчылыгы")}: {snapshot.manual_priority_minutes??"—"} {w("мин", "мүн")}</Copy></Panel>
         {snapshot.channels.map(ch=><Panel key={ch.id} style={{gap:12}}><Copy size={19}>{ch.id} · {ch.assigned.name}</Copy>{ch.protected?<Copy accent>{w("Защищён · исключён из расписаний", "Корголгон · графиктерге кирбейт")}</Copy>:<><Copy>{ch.assigned.allow_auto?w("Автоматизация разрешена владельцем", "Ээси автоматташтырууга уруксат берди"):w("Разрешение автоматизации не дано", "Автоматташтырууга уруксат берилген жок")}</Copy><Copy muted size={14}>{ch.manual_until===undefined?w("Ручной приоритет неизвестен", "Кол артыкчылыгы белгисиз"):ch.manual_until>now/1000?`${w("Ручной приоритет до", "Кол артыкчылыгы")} ${stamp(ch.manual_until,locale)}`:w("Активного ручного приоритета нет", "Активдүү кол артыкчылыгы жок")}</Copy><CTA secondary disabled={state.busy||state.refreshing||waiting} label={ch.assigned.allow_auto?w("Запретить автоматизацию", "Автоматташтырууга тыюу салуу"):w("Разрешить автоматизацию", "Автоматташтырууга уруксат берүү")} onPress={()=>void workspace.consent(ch.id,!ch.assigned.allow_auto)}/></>}</Panel>)}
@@ -128,9 +128,9 @@ function errorText(code:string,locale:Locale) {
   const labels:Record<string,[string,string]>={stale_measurements:["Нет свежего измерения. Создайте образец симулятора явно.","Жаңы өлчөө жок. Симулятордун үлгүсүн түзүңүз."],protected_channel:["CH3 защищён. Управление запрещено.","CH3 корголгон. Башкарууга тыюу салынат."],peak_exceeded:["Запрос превысит допустимый пик.","Суроо уруксат берилген чокудан ашат."],invalid_response:["Ответ сервера нарушает контракт. Данные не приняты.","Сервердин жообу келишимге туура келбейт. Маалымат кабыл алынган жок."],controller_not_found:["Контроллер удалён или недоступен. Выберите другой.","Контроллер өчүрүлгөн же жеткиликсиз. Башкасын тандаңыз."],simulator_confirmed:["Подтверждено серверным симулятором","Сервердик симулятор ырастады"]};
   return labels[code]?.[locale==="ky"?1:0]??w("Сервер сообщил: ", "Сервер билдирди: ")+code;
 }
-function PowerHistory({rows,locale}:{rows:ServerMeasurement[];locale:Locale}) {
+function PowerHistory({rows,locale,nowSeconds}:{rows:ServerMeasurement[];locale:Locale;nowSeconds:number}) {
   const w=(ru:string,ky:string)=>locale==="ky"?ky:ru;
-  const history=serverPowerHistory(rows.slice(-30),Date.now()/1000);
+  const history=serverPowerHistory(rows.slice(-30),nowSeconds);
   const points=history.points.map(point=>({t:point.at/1000,p:point.watts!}));
   const start=points[0]?.t??0,end=points.at(-1)?.t??start;
   const peak=Math.max(1,...points.map(point=>point.p));
