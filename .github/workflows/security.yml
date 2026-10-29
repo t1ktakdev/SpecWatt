@@ -94,6 +94,11 @@ jobs:
       - name: Install mobile dependencies
         working-directory: mobile/specwatt-app
         run: npm ci
+      # Mobile HTTP contracts boot a real, isolated FastAPI+Uvicorn process.
+      # These pinned test dependencies are essential; absent uvicorn used to
+      # fail ten E2E tests on Linux even though Windows developers passed.
+      - name: Install loopback FastAPI test dependencies
+        run: python -m pip install -r backend/requirements-dev.txt
       - name: Run mobile runtime contracts
         working-directory: mobile/specwatt-app
         run: npm test
