@@ -29,6 +29,7 @@ import {
   isSessionFailure,
 } from "../specwatt/server-request-scope";
 import type { ServerSession } from "../specwatt/server-request-scope";
+import { t } from "../specwatt/i18n";
 
 export default function ServerScreen() {
   const { data } = useSpec();
@@ -55,6 +56,7 @@ export default function ServerScreen() {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [controllers, setControllers] = useState<ServerController[]>([]);
   const [snapshot, setSnapshot] = useState<ServerSnapshot | null>(null);
@@ -369,7 +371,7 @@ export default function ServerScreen() {
                     accessibilityRole="button"
                     accessibilityState={{ selected: mode === value }}
                     disabled={busy}
-                    onPress={() => setMode(value)}
+                    onPress={() => { setMode(value); setPassword(""); setShowPassword(false); setError(""); }}
                     style={[
                       sty.card,
                       {
@@ -398,6 +400,8 @@ export default function ServerScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
+                autoComplete="email"
+                textContentType="emailAddress"
                 maxLength={254}
               />
               <TextInput
@@ -413,9 +417,14 @@ export default function ServerScreen() {
                 placeholderTextColor={theme.dim}
                 autoCapitalize="none"
                 autoCorrect={false}
-                secureTextEntry
+                secureTextEntry={!showPassword}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                textContentType={mode === "login" ? "password" : "newPassword"}
                 maxLength={128}
               />
+              <CTA secondary disabled={busy}
+                label={t(locale, showPassword ? "hidePassword" : "showPassword")}
+                onPress={() => setShowPassword(!showPassword)} />
               <CTA
                 disabled={busy}
                 label={
@@ -431,15 +440,17 @@ export default function ServerScreen() {
                       vault,
                     });
                     const signedIn = scope.activate(connection);
+                    const flight = scope.begin();
                     try {
-                      await connection.authenticate(mode, email, password);
-                      const rows = await connection.controllers();
+                      await connection.authenticate(mode, email, password, { signal: flight.signal });
+                      const rows = await connection.controllers({ signal: flight.signal });
                       if (mounted.current && scope.isSession(signedIn)) {
                         setSession(signedIn);
                         setControllers(rows);
                       }
                     } finally {
-                      setPassword("");
+                      flight.done();
+                      if (mounted.current) { setPassword(""); setShowPassword(false); }
                     }
                   });
                 }}

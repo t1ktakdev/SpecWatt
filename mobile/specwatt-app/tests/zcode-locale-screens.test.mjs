@@ -77,6 +77,7 @@ const styMock = {
 };
 
 function indexHarness(store) {
+  store.setFirstRunStep = value => { store.data = {...store.data, firstRunStep:value}; };
   const mirrorCalls = { remember: [] };
   const { react, rerender } = reactMock();
   const routerCalls = { replace: [], push: [] };
@@ -91,7 +92,7 @@ function indexHarness(store) {
       SafeAreaView: component('SafeArea'), useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
     },
     'expo-router': { router: { replace: (x) => routerCalls.replace.push(x), push: (x) => routerCalls.push.push(x) } },
-    '../specwatt/motion': { MotionPressable: component('Pressable') },
+    '../specwatt/motion': { MotionPressable: component('Pressable'), Reveal: component('Reveal') },
     '../specwatt/ui': {
       Copy: component('Copy'), CTA: component('CTA'),
       Panel: component('Panel'), Photo: component('Photo'),
@@ -133,7 +134,7 @@ test('KY onboarding welcome page shows Kyrgyz feature badges, never Russian ones
   const tree = render();
   const text = treeText(tree);
   assert.ok(text.includes('Жүктөм'), 'KY badge "Жүктөм" must render');
-  assert.ok(text.includes(i18n.t('ky', 'welcomeTitle1')), 'KY welcome title must render');
+  assert.ok(text.includes(i18n.t('ky', 'introSee')), 'KY welcome title must render');
   assert.ok(!text.includes('Нагрузка'), 'hardcoded Russian badge leaked into KY onboarding');
   assert.ok(!text.includes('Всё работает'), 'hardcoded Russian title leaked into KY onboarding');
 });
@@ -143,7 +144,7 @@ test('language cards expose role, label, selected state and delegate locale to t
   const store = storeBase({ setLocale: (x) => setLocale.push(x) });
   const { render, mirrorCalls } = indexHarness(store);
   let tree = render();
-  const next = find(tree, (n) => isType('CTA')(n) && n.props.label === i18n.t('ky', 'next'));
+  const next = find(tree, (n) => isType('CTA')(n) && n.props.label === i18n.t('ky', 'introSkip'));
   assert.ok(next, 'welcome CTA must use the dictionary');
   next.props.onPress();
   tree = render();
@@ -160,23 +161,14 @@ test('language cards expose role, label, selected state and delegate locale to t
   assert.deepEqual(mirrorCalls.remember, [], 'the screen does not access independent storage');
 });
 
-test('login form inputs carry accessibility labels and errors are announced', () => {
-  const store = storeBase();
-  const { render, states } = indexHarness(store);
-  let tree = render();
-  find(tree, (n) => isType('Pressable')(n) && n.props.accessibilityLabel === i18n.t('ky', 'loginUnavailable')).props.onPress();
-  tree = render();
-  const labels = findAll(tree, isType('TextInput')).map((n) => n.props.accessibilityLabel);
-  assert.ok(labels.includes(i18n.t('ky', 'email')), 'email input needs a label');
-  assert.ok(labels.includes(i18n.t('ky', 'password')), 'password input needs a label');
-  // Trigger a validation error through the real submit handler.
-  const submit = find(tree, (n) => isType('CTA')(n) && n.props.label === i18n.t('ky', 'loginTitle'));
-  assert.ok(submit, 'login submit must use the dictionary');
-  submit.props.onPress();
-  tree = render();
-  const live = find(tree, (n) => isType('Copy')(n) && n.props.accessibilityLiveRegion === 'polite');
-  assert.ok(live, 'validation error must be a live region');
-  assert.ok(treeText(live).includes(i18n.t('ky', 'errEmail')));
+test('onboarding auth opens the real server workspace without fake forms', () => {
+  const store = storeBase({data: {locale:'ky', source:'none', onboarded:false, firstRunStep:'mode'}});
+  const {render,routerCalls} = indexHarness(store);
+  const tree = render();
+  find(tree, n => isType('CTA')(n) && n.props.label === i18n.t('ky','authEntry')).props.onPress();
+  assert.deepEqual(routerCalls.push, ['/server']);
+  assert.equal(findAll(tree,isType('TextInput')).length,0);
+  assert.equal(store.data.onboarded,false);
 });
 
 test('onboarding receives recovered Kyrgyz locale from SpecProvider, no UI storage read', () => {
@@ -186,7 +178,7 @@ test('onboarding receives recovered Kyrgyz locale from SpecProvider, no UI stora
     setLocale: () => { throw Error('no UI mutation needed'); },
   });
   const { render } = indexHarness(store);
-  assert.ok(treeText(render()).includes(i18n.t('ky', 'welcomeTitle1')));
+  assert.ok(treeText(render()).includes(i18n.t('ky', 'introSee')));
 });
 
 test('onboarding leaves healthy Russian locale untouched', () => {
@@ -195,7 +187,7 @@ test('onboarding leaves healthy Russian locale untouched', () => {
     setLocale: () => { throw Error('healthy store locale should persist'); },
   });
   const { render } = indexHarness(store);
-  assert.ok(treeText(render()).includes(i18n.t('ru', 'welcomeTitle1')));
+  assert.ok(treeText(render()).includes(i18n.t('ru', 'introSee')));
 });
 
 function setupHarness(store) {

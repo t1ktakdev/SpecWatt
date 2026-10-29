@@ -4,6 +4,8 @@ import type { ImageId } from "./images";
 
 /** Pure local simulation: this module has no equipment transport. */
 export type Locale = "ru" | "ky";
+export type FirstRunStep = "welcome" | "insight" | "safety" | "locale" | "mode" | "controller";
+const firstRunSteps: FirstRunStep[] = ["welcome", "insight", "safety", "locale", "mode", "controller"];
 export type ChannelId = "CH1" | "CH2" | "CH3";
 export type Assign = {
   name: string;
@@ -56,6 +58,7 @@ export type JournalEvent = {
   details?: Record<string, string | number>;
 };
 export type DemoState = {
+  firstRunStep?: FirstRunStep;
   locale: Locale;
   source: "none" | "demo";
   onboarded: boolean;
@@ -70,6 +73,7 @@ export type DemoState = {
   appliedPlan?: LoadPlan;
 };
 export type Action =
+  | { type: "first-run-step"; value: FirstRunStep }
   | { type: "locale"; value: Locale }
   | { type: "enter-demo" }
   | { type: "leave-demo" }
@@ -247,6 +251,8 @@ export function restoreState(raw: unknown): DemoState {
     return base;
   base.locale = raw.locale as Locale;
   base.onboarded = raw.onboarded === true;
+  if (firstRunSteps.includes(raw.firstRunStep as FirstRunStep))
+    base.firstRunStep = raw.firstRunStep as FirstRunStep;
   if (raw.source === "none") return base;
   if (!Array.isArray(raw.channels) || raw.channels.length !== 3)
     return emptyState();
@@ -639,6 +645,8 @@ export function reduceState(
 ): DemoState {
   if (a.type === "locale")
     return { ...s, locale: a.value === "ky" ? "ky" : "ru" };
+  if (a.type === "first-run-step")
+    return firstRunSteps.includes(a.value) ? { ...s, firstRunStep: a.value } : s;
   if (a.type === "enter-demo")
     return event(demoState(s.locale), "demo-start", "system", now);
   if (a.type === "leave-demo")

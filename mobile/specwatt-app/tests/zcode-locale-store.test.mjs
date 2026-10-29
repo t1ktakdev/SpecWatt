@@ -10,6 +10,22 @@ const KEY = 'specwatt-mobile-v1';
 const MIRROR = mirror.MIRROR_KEY;
 const tick = async () => { await new Promise((resolve) => setImmediate(resolve)); };
 
+test('serialized provider persists unfinished step and language together across remount', async () => {
+  const h = mount();
+  h.render(); await tick();
+  let ctx = h.render();
+  ctx.setFirstRunStep('insight'); ctx.setLocale('ky');
+  h.render(); await tick();
+  ctx = h.render(); ctx.setFirstRunStep('controller');
+  h.render(); await tick();
+  const next = mount(h.table); next.render(); await tick();
+  const restored = next.render();
+  assert.equal(restored.data.firstRunStep,'controller');
+  assert.equal(restored.data.locale,'ky');
+  assert.equal(restored.data.onboarded,false);
+  assert.equal(restored.data.channels.length,0);
+});
+
 function mount(initial = {}, opts = {}) {
   const table = { ...initial };
   const writes = [];

@@ -8,7 +8,7 @@ import React, {
 } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { emptyState, reduceState, restoreState } from "./model";
-import type { Action, Assign, ChannelId, DemoState, Locale } from "./model";
+import type { Action, Assign, ChannelId, DemoState, FirstRunStep, Locale } from "./model";
 import { localeFromStoredState, recallLocale, rememberLocale } from "./localization/locale-mirror";
 
 export type {
@@ -31,6 +31,7 @@ type Ctx = {
   leaveDemo: () => void;
   assign: (id: ChannelId, assignment: Assign) => void;
   setOnboarded: () => void;
+  setFirstRunStep: (value: FirstRunStep) => void;
   toggleChannel: (id: ChannelId) => void;
   setAutopilot: (value: boolean) => void;
   setPeak: (value: number) => void;
@@ -134,6 +135,7 @@ export function SpecProvider({ children }: { children: React.ReactNode }) {
       leaveDemo: () => dispatch({ type: "leave-demo" }),
       assign: (id, assignment) => dispatch({ type: "assign", id, assignment }),
       setOnboarded: () => dispatch({ type: "onboarded" }),
+      setFirstRunStep: (value) => dispatch({ type: "first-run-step", value }),
       toggleChannel: (id) => dispatch({ type: "toggle", id }),
       setAutopilot: (value) => dispatch({ type: "autopilot", value }),
       setPeak: (value) => dispatch({ type: "peak", value }),

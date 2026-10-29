@@ -16,10 +16,22 @@ export default function Layout() {
     Arimo: require("../assets/specwatt/Arimo.ttf"),
   });
   const [complete, setComplete] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [opacity] = useState(() => new Animated.Value(1));
   useEffect(() => {
-    if (!loaded && !fontError) return;
+    // Bound the whole startup, including a font loader or accessibility query
+    // that never settles. The app remains usable with a system font fallback.
+    const deadline = setTimeout(() => {
+      setTimedOut(true);
+      setComplete(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }, 4000);
+    return () => clearTimeout(deadline);
+  }, []);
+  useEffect(() => {
+    if (!loaded && !fontError && !timedOut) return;
     SplashScreen.hideAsync().catch(() => {});
+    if (timedOut) return;
     // An actual animated native brand transition, not an interactive onboarding card.
     let active = true;
     const animation = Animated.sequence([
@@ -50,8 +62,8 @@ export default function Layout() {
       animation.stop();
       listener.remove();
     };
-  }, [loaded, fontError, opacity]);
-  if (!loaded && !fontError)
+  }, [loaded, fontError, opacity, timedOut]);
+  if (!loaded && !fontError && !timedOut)
     return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
   return (
     <GestureHandlerRootView style={{flex:1}}><MotionProvider><SpecProvider>
@@ -59,7 +71,7 @@ export default function Layout() {
         <AppNavigation />
         {!complete && (
           <Animated.View
-            pointerEvents="none"
+            pointerEvents="auto"
             accessibilityElementsHidden
             style={{
               position: "absolute",

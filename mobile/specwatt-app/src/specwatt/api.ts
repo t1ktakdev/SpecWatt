@@ -480,6 +480,7 @@ export class BrainClient {
     mode: "login" | "register",
     email: string,
     password: string,
+    options?: RequestOptions,
   ): Promise<void> {
     if (
       !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
@@ -494,6 +495,7 @@ export class BrainClient {
         "POST",
         { email: email.trim(), password },
         false,
+        options?.signal,
       ),
     );
     if (
@@ -502,7 +504,12 @@ export class BrainClient {
     )
       throw new ApiError("invalid_response");
     string(result.user_id, 128);
+    if (options?.signal?.aborted) throw new ApiError("request_cancelled");
     await this.vault.set(this.baseUrl, string(result.access_token, 512));
+    if (options?.signal?.aborted) {
+      await this.invalidateToken(result.access_token as string);
+      throw new ApiError("request_cancelled");
+    }
   }
   async logout(): Promise<void> {
     // Capture the session identity once: the bearer sent to the server must
