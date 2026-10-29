@@ -85,8 +85,8 @@ test('real FastAPI loopback: register, create simulator, fresh snapshot with pro
   state.controllerId = created.id;
 });
 
-// Failures in the setup test must skip the dependents with a clear reason
-// instead of dying on an undefined shared-state destructuring.
+// Setup failures remain failures, with an explicit dependency explanation
+// rather than undefined shared-state destructuring or skipped coverage.
 function prereq(t) {
   if (!state.owner || !state.controllerId) {
     assert.fail('prerequisite setup test did not complete');

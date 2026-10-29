@@ -32,11 +32,17 @@ async function stop(){if(server&&!server.killed){server.kill();await new Promise
 const makeClient=()=>{let token=null;return new BrainClient({baseUrl:base,development:true,vault:{get:async()=>token,set:async(_url,value)=>{token=value;},clear:async()=>{token=null;},clearMatching:async(_url,value)=>{if(token===value)token=null;}}});};
 async function capture(page,name,locale,width,extra={}){
  await page.waitForTimeout(300);
+ // Match viewport framing deliberately; screenshot/fullPage and browser focus
+ // can otherwise leave different scroll offsets between equivalent scenes.
+ const topFrame=/^(signin|controllers-empty|home|devices|detail|requested|acknowledged|journal|autopilot|plan)(-text-[0-9.]+)?$/.test(name);
+ if(topFrame)await page.evaluate(()=>{window.scrollTo(0,0);for(const n of document.querySelectorAll('*'))if(n.scrollTop)n.scrollTop=0;});
+ const badge=page.getByText('СЕРВЕР · СИМУЛЯЦИЯ',{exact:true}).filter({visible:true});
+ const bounds=await badge.count()?await badge.first().boundingBox():null;
  const file=`${locale}-${width}-${name}.png`;
  await page.screenshot({path:path.join(output,file)});
  if(process.env.QA_FULLPAGE==='1')await page.screenshot({path:path.join(output,file.replace('.png','-full.png')),fullPage:true});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
- manifest.push({file,name,locale,width,height:852,platform:'WEB Edge Chromium / Expo dev client',fontScale:'browser default',reducedMotion:true,source:'server-simulator',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),workingTree:execFileSync('git',['diff','--stat'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),sha256:createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),overflow,...extra});
+ manifest.push({file,name,locale,width,height:852,platform:'WEB Edge Chromium / Expo dev client',fontScale:'browser default',reducedMotion:true,source:'server-simulator',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),workingTree:execFileSync('git',['diff','--stat'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),sha256:createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),overflow,capturePosition:topFrame?"top":"action focus",sourceBounds:bounds,...extra});
  assert.equal(overflow,false,`${file} horizontal overflow`);
 }
 async function register(page,locale){
