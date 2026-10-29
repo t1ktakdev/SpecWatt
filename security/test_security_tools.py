@@ -40,14 +40,43 @@ class AuditGateTests(unittest.TestCase):
 
 class SecretScannerTests(unittest.TestCase):
     def test_autofill_hints_and_first_run_fixture_are_exact_nonsecret_literals(self):
-        hints = 'autoComplete={mode === "login" ? "current-password" : "new-password"}'
-        content_type = 'textContentType={mode === "login" ? "password" : "newPassword"}'
-        fixture = "access_" + "token:" + repr('fixture-session')
-        for example in (hints, content_type, fixture):
-            self.assertEqual(scanner.scan_text(example, 'audited-source-literal'), [])
+        sources = {
+            'mobile/specwatt-app/src/screens/server.tsx': ('autoComplete={mode', 'textContentType={mode'),
+            'mobile/specwatt-app/tests/first-run-auth.test.mjs': ('const response=',),
+        }
+        for source, prefixes in sources.items():
+            lines = (scanner.REPO / source).read_text(encoding='utf-8').splitlines()
+            for prefix in prefixes:
+                line = next(line for line in lines if line.strip().startswith(prefix))
+                self.assertEqual(scanner.scan_text(line, source), [])
+                self.assertTrue(scanner.scan_text(line, 'other-file.tsx'))
+                self.assertTrue(scanner.scan_text(line + ' // changed', source))
+                self.assertFalse(scanner.audited_source_literal('github-token', source, line))
         for value in ('new-password-UNREVIEWED', 'newPassword-UNREVIEWED', 'fixture-session-UNREVIEWED'):
             synthetic = 'pass' + 'word=' + repr(value)
             self.assertTrue(scanner.scan_text(synthetic, 'unreviewed'))
+
+    def test_first_run_literal_values_are_detected_in_real_assignments_everywhere(self):
+        for source in ('other-file.ts', 'mobile/specwatt-app/src/screens/server.tsx',
+                       'mobile/specwatt-app/tests/first-run-auth.test.mjs', 'security/test_security_tools.py'):
+            for value in ('new-password', 'newPassword', 'fixture-session'):
+                assignment = 'pass' + 'word=' + repr(value)
+                self.assertTrue(scanner.scan_text(assignment, source), (source, value))
+
+    def test_history_scanning_uses_the_same_path_and_full_line_constraints(self):
+        source = 'mobile/specwatt-app/src/screens/server.tsx'
+        line = next(line for line in (scanner.REPO / source).read_text(encoding='utf-8').splitlines()
+                    if line.strip().startswith('autoComplete={mode'))
+        cases = ((source, line, False), ('other.ts', line, True), (source, line + ' // changed', True))
+        for path, content, should_detect in cases:
+            def fake_run(args, **kwargs):
+                if args[1] == 'rev-list':
+                    return subprocess.CompletedProcess(args, 0, stdout=b'commit\n')
+                output = f'commit:{path}:421:{content}\n'.encode('utf-8')
+                hit = args[args.index('-e') + 1] == scanner.to_posix(scanner.PATTERNS[-1][1].pattern)
+                return subprocess.CompletedProcess(args, 0 if hit else 1, stdout=output if hit else b'')
+            with patch.object(scanner.subprocess, 'run', side_effect=fake_run):
+                self.assertEqual(bool(scanner.scan_history()), should_detect)
 
     def test_allowlist_does_not_exempt_a_real_value_with_fixture_prefix(self):
         synthetic = ''.join(('pass', 'word=')) + chr(34) + 'correct-horse-battery-UNREVIEWED' + chr(34)

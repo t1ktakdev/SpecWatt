@@ -37,12 +37,6 @@ PATTERNS = [
 # Literal value snippets that are known test fixtures or documentation
 # examples. Each entry needs a reason; keep this list minimal and audited.
 ALLOWLIST = [
-    ("generic-assignment", "new-password",
-     "React Native autoComplete enum; ternary colon is not credential assignment"),
-    ("generic-assignment", "newPassword",
-     "React Native textContentType enum; ternary colon is not credential assignment"),
-    ("generic-assignment", "fixture-session",
-     "first-run auth test response only; synthetic session never used by a service"),
     ("generic-assignment", "leaked-secret-999", "synthetic rejected-input echo test"),
     ("generic-assignment", "whatever-pass-123", "synthetic invalid login fixture"),
     ("generic-assignment", "another-pass-12345", "synthetic duplicate registration fixture"),
@@ -58,6 +52,37 @@ ALLOWLIST = [
     ("generic-assignment", "password.", "documentation prose, not an assignment"),
     ("generic-assignment", "password: ''", "empty example value"),
 ]
+
+# First-run exceptions are NOT global value exemptions. Only the complete,
+# audited source line at the exact repository path may suppress a generic hit.
+# Any content/whitespace change, added credential, other path or high-signal
+# pattern remains subject to scanning, in both current files and history.
+AUDITED_SOURCE_LINES = {
+    "mobile/specwatt-app/src/screens/server.tsx": frozenset({
+        # React Native autoComplete and textContentType enum ternaries.
+        "25137b4314db363e34ecd6ddc077cdd0f5e8e2ada2b2470c54b3682af9dba649",
+        "4e70a2f6964e4839dc8d1736019d970604b2ec834aac667f5e144c261413a73f",
+    }),
+    "mobile/specwatt-app/tests/first-run-auth.test.mjs": frozenset({
+        # Synthetic auth response fixture; never used by a real service.
+        "892c757fc217b392501cd0f81fae441725291041670557ee1742446c0fb24373",
+    }),
+    "security/test_security_tools.py": frozenset({
+        # Exact old test snippets in 0db8542/4de7daf: copies of the same two
+        # JSX enums inside Python test strings, not credential assignments.
+        "71b6866dfcfc3897464e0dada3c24d9963fb9532590302ee6d3e197bc302560a",
+        "4fb8b7c4cb5f4a1421198b5780fb86a8f74bb9bd3226e089b1cf3d637aa59c30",
+    }),
+}
+
+
+def audited_source_literal(pattern_id, path, line):
+    return (
+        pattern_id == "generic-assignment"
+        and "\n" not in line
+        and hashlib.sha256(line.encode("utf-8")).hexdigest()
+        in AUDITED_SOURCE_LINES.get(path, ())
+    )
 
 # Files whose contents are third-party registries or lockfiles; they are still
 # scanned for high-signal token patterns but generic assignments there are noise.
@@ -109,6 +134,11 @@ def scan_text(text, source, generic_skip=False):
             continue
         for match in pattern.finditer(text):
             if allowlisted(pattern_id, match.group(0)):
+                continue
+            start = text.rfind("\n", 0, match.start()) + 1
+            end = text.find("\n", match.end())
+            line = text[start:end if end != -1 else len(text)].removesuffix("\r")
+            if audited_source_literal(pattern_id, source, line):
                 continue
             findings.append((pattern_id, source, mask(match.group(0))))
     return findings
@@ -167,7 +197,9 @@ def scan_history():
                 if pattern_id == 'generic-assignment' and generic_skip:
                     continue
                 for match in pattern.finditer(content):
-                    if not allowlisted(pattern_id, match.group(0)) and not audited_historical_fixture(
+                    if not allowlisted(pattern_id, match.group(0)) and not audited_source_literal(
+                        pattern_id, parts[1], content
+                    ) and not audited_historical_fixture(
                         pattern_id, commit, parts[1], parts[2], content
                     ):
                         findings.append((pattern_id, f"{commit[:12]}:{parts[1]}:{parts[2]}", mask(match.group(0))))
