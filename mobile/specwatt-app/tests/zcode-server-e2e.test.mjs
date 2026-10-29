@@ -289,3 +289,11 @@ test('offline port: safe GET retried once over real transport, mutation never re
   const rows = await reconnected.controllers();
   assert.equal(rows.length, 1);
 });
+
+test('the same HTTP fixture serves concurrent independent reads without losing its lifetime',async()=>{
+ await startServer();
+ const snapshots=await Promise.all(Array.from({length:8},()=>state.owner.snapshot(state.controllerId)));
+ fixture.assertAlive();
+ assert.equal(snapshots.length,8);
+ for(const snapshot of snapshots){assert.equal(snapshot.source,'simulator');assert.equal(snapshot.channels[2].protected,true);}
+});

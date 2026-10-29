@@ -15,3 +15,13 @@ test('replayed sequence, duplicate/backward times, future and mixed sources are 
 test('partial/malformed history never becomes zero or a partial total',()=>{
  const h=serverPowerHistory([{...row(1,100),channels:{CH1:5,CH3:2.4}},row(2,120)],200);assert.equal(h.points.length,1);assert.equal(h.ignored,1);assert.equal(h.summary.coveredMs,0);
 });
+
+test('channel detail history integrates only that channel while validating the full sample',()=>{
+ const values=[row(1,100,10),row(2,130,10)];
+ const lamp=serverPowerHistory(values,200,60,'CH1');
+ const protectedChannel=serverPowerHistory(values,200,60,'CH3');
+ assert.deepEqual(lamp.points.map(p=>p.watts),[7.6,7.6]);
+ assert.ok(Math.abs(lamp.summary.observedWh-7.6/120)<1e-12);
+ assert.ok(Math.abs(protectedChannel.summary.observedWh-2.4/120)<1e-12);
+ assert.equal(serverPowerHistory([{...row(1,100),channels:{CH1:5,CH3:2.4}}],200,60,'CH1').points.length,0);
+});

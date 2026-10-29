@@ -122,6 +122,7 @@ export function Shell({
 }) {
   const { data, ready, storageError } = useSpec();
   const { width } = useWindowDimensions();
+  const route = usePathname();
   const w = useWords();
   if (!ready)
     return (
@@ -143,7 +144,7 @@ export function Shell({
       style={{ flex: 1 }}
     >
       <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
-        <ScrollView
+        <ScrollView key={route}
           contentContainerStyle={[s.body, {paddingHorizontal: width < 360 ? 16 : 20}]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}

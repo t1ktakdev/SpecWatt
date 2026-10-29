@@ -13,7 +13,7 @@ import {BrainClient,createTokenVault} from '../src/specwatt/api.ts';
 import {createLiveWorkspace} from '../src/specwatt/live-workspace.ts';
 const {chromium}=createRequire(import.meta.url)(process.env.PLAYWRIGHT_MODULE||'playwright');
 const web=process.env.QA_BASE_URL||'http://127.0.0.1:8120';
-const output=path.resolve('../../outputs/live-ux/server-after');fs.mkdirSync(output,{recursive:true});
+const output=path.resolve(process.env.QA_OUTPUT||'../../outputs/product-finish/after');fs.mkdirSync(output,{recursive:true});
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'specwatt-live-ux-'));
 const port=await new Promise(resolve=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p));});});
 const base=`http://127.0.0.1:${port}`;
@@ -34,8 +34,9 @@ async function capture(page,name,locale,width,extra={}){
  await page.waitForTimeout(300);
  const file=`${locale}-${width}-${name}.png`;
  await page.screenshot({path:path.join(output,file)});
+ if(process.env.QA_FULLPAGE==='1')await page.screenshot({path:path.join(output,file.replace('.png','-full.png')),fullPage:true});
  const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
- manifest.push({file,name,locale,width,height:852,platform:'WEB Edge Chromium / Expo dev client',fontScale:'browser default',reducedMotion:true,source:'server-simulator',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),workingTree:execFileSync('git',['diff','--stat'],{encoding:'utf8'}).trim(),sha256:createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),overflow,...extra});
+ manifest.push({file,name,locale,width,height:852,platform:'WEB Edge Chromium / Expo dev client',fontScale:'browser default',reducedMotion:true,source:'server-simulator',sha:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),workingTree:execFileSync('git',['diff','--stat'],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim(),sha256:createHash('sha256').update(fs.readFileSync(path.join(output,file))).digest('hex'),overflow,...extra});
  assert.equal(overflow,false,`${file} horizontal overflow`);
 }
 async function register(page,locale){
@@ -77,8 +78,15 @@ try{
   await page.addInitScript(state=>{if(!sessionStorage.getItem('seeded')){localStorage.setItem('specwatt-mobile-v1',JSON.stringify(state));sessionStorage.setItem('seeded','1');}},demoState(locale));
   await register(page,locale);await capture(page,'controllers-empty',locale,width);
   await create(page,locale);await capture(page,'home',locale,width);
+  const targets=await page.locator('[role="button"],[role="tab"]').evaluateAll(nodes=>nodes.map(n=>({label:n.getAttribute('aria-label')||n.textContent,height:n.getBoundingClientRect().height,width:n.getBoundingClientRect().width})).filter(n=>n.height>0));
+  assert.deepEqual(targets.filter(n=>n.height<48||n.width<44),[], 'product touch targets meet 48px height and 44px width on WEB');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(()=>document.activeElement!==document.body),true,'keyboard focus reaches a control');
+
   const source=page.getByText('СЕРВЕР · СИМУЛЯЦИЯ',{exact:true}).filter({visible:true});await source.waitFor();
-  const nav=async name=>{await page.getByRole('tab',{name,exact:true}).click();await source.waitFor();};
+  const nav=async name=>{await page.getByRole('tab',{name,exact:true}).click();await source.waitFor();
+   await page.waitForTimeout(100);
+   assert.equal(await page.evaluate(()=>Math.max(0,...[...document.querySelectorAll('div')].filter(n=>getComputedStyle(n).overflowY==='auto'||getComputedStyle(n).overflowY==='scroll').map(n=>n.scrollTop))),0,'route change starts at the top');};
   await nav(ky?'Түзмөктөр':'Устройства');await page.getByText(ky?'CH3 корголгон · байкоо гана':'CH3 защищён · только наблюдение',{exact:true}).filter({visible:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:/CH3.*(Запросить|суроо)/}).count(),0);
   await capture(page,'devices',locale,width);
@@ -104,14 +112,25 @@ try{
   if(locale==='ru'&&width===393){
    await stop();await start(); // isolate fault/scheduler budget after visual matrix
    await nav('Устройства');await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
-   await nav('Автопилот');await page.getByRole('button',{name:'Разрешить автоматизацию',exact:true}).nth(1).click();
-   await page.getByRole('button',{name:'Запретить автоматизацию',exact:true}).waitFor();
+   await nav('Автопилот');let grants=0;await page.route('**/channels/CH2/assignment',async route=>{grants++;await route.continue();});
+   await page.getByRole('button',{name:'Разрешить автоматизацию',exact:true}).nth(1).click();
+   assert.equal(grants,0,'opening consent does not grant permission');
+   await capture(page,'autopilot-consent',locale,width);
+   await page.getByRole('button',{name:'Подтвердить разрешение',exact:true}).click();
+   await page.getByRole('button',{name:'Запретить автоматизацию',exact:true}).waitFor();assert.equal(grants,1);await page.unroute('**/channels/CH2/assignment');
    await nav('План');await page.getByRole('button',{name:'CH2',exact:true}).click();
-   await page.getByRole('textbox',{name:'Начало расписания UTC',exact:true}).fill(new Date(Date.now()+300000).toISOString().replace(/\.\d{3}Z$/,'Z'));
+   await page.getByRole('button',{name:'Через 15 мин',exact:true}).click();
    await page.getByRole('textbox',{name:'Длительность в минутах',exact:true}).fill('1');
    await page.getByRole('button',{name:'Проверить окно',exact:true}).click();
    await page.getByText('Окно допустимо сейчас. При исполнении условия проверяются снова.',{exact:true}).filter({visible:true}).waitFor();
    await capture(page,'plan-evaluated',locale,width);
+   // The reviewed UTC instant cannot silently change when the OS zone changes.
+   await page.evaluate(()=>{window.qaOriginalZone=Intl.DateTimeFormat.prototype.resolvedOptions;Intl.DateTimeFormat.prototype.resolvedOptions=function(){return {...window.qaOriginalZone.call(this),timeZone:'Europe/Berlin'};};});
+   await page.waitForTimeout(1200);
+   assert.equal(await page.getByRole('button',{name:'Подтвердить создание расписания',exact:true}).isDisabled(),true);
+   await page.evaluate(()=>{Intl.DateTimeFormat.prototype.resolvedOptions=window.qaOriginalZone;});
+   await page.waitForTimeout(1200);
+   checks.push('WEB: timezone change invalidates confirmation; creation keeps evaluated UTC input');
    await page.getByRole('button',{name:'Подтвердить создание расписания',exact:true}).click();
    await page.getByRole('button',{name:'Отменить расписание',exact:true}).waitFor();await capture(page,'plan-created',locale,width);
    await page.getByRole('button',{name:'Отменить расписание',exact:true}).click();await page.getByRole('button',{name:'Подтвердить отмену',exact:true}).click();
@@ -119,8 +138,21 @@ try{
    checks.push('WEB: main Autopilot consent → Plan evaluate → explicit create → explicit cancel');
    await nav('Устройства');
    await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
+   await page.waitForTimeout(31500);
+   await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();
+   await page.getByText('Данные устарели или недоступны',{exact:true}).filter({visible:true}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'CH1 · Запросить включение',exact:true}).isDisabled(),true);
+   await capture(page,'stale',locale,width);checks.push('WEB: >30s real sample age disables actuation; GET does not renew acquisition');
+   await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
+   await page.route('**/snapshot',route=>route.fulfill({status:429,contentType:'application/json',body:JSON.stringify({detail:{code:'rate_limited'}})}));
+   await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();
+   await page.getByText('Слишком много запросов. Подождите минуту и обновите данные.',{exact:true}).filter({visible:true}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'CH1 · Запросить включение',exact:true}).isDisabled(),true);
+   await capture(page,'rate-limited',locale,width);await page.unroute('**/snapshot');
+   await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();
+   checks.push('WEB: injected HTTP 429 remains visible and disables commands');
    await stop();await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();
-   await page.getByText('network_error',{exact:true}).filter({visible:true}).waitFor();
+   await page.getByText('Нет ответа сервера. Проверьте соединение; данные могут быть устаревшими.',{exact:true}).filter({visible:true}).waitFor();
    assert.equal(await page.getByRole('button',{name:'CH1 · Запросить включение',exact:true}).isDisabled(),true);
    await capture(page,'offline',locale,width);await start();
    await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();await page.getByText('Данные свежие',{exact:true}).filter({visible:true}).waitFor();

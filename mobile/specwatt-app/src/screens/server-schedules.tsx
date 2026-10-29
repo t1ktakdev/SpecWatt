@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, TextInput, View } from 'react-native';
 import { ApiError } from '../specwatt/api';
 import { scheduleFromForm } from '../specwatt/scheduler-api';
+import {localStartToUtc, formatLocalStart} from '../specwatt/schedule-time';
 import type { ScheduleEvaluation, ScheduleInput, SchedulerApi, ServerSchedule } from '../specwatt/scheduler-api';
 import { Copy, CTA, Panel } from '../specwatt/ui';
 import { sty, theme } from '../specwatt/theme';
@@ -9,6 +10,7 @@ import { isSessionFailure, isAmbiguousMutationOutcome } from '../specwatt/server
 
 export type ServerSchedulesProps = {
   api: SchedulerApi;
+  initialChannel?: 'CH1' | 'CH2';
   controllerId: string;
   locale: 'ru' | 'ky';
   onChanged: () => void | Promise<void>;
@@ -21,16 +23,19 @@ export default function ServerSchedules(props: ServerSchedulesProps) {
   return <SchedulePanel key={props.controllerId} {...props} />;
 }
 
-function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired }: ServerSchedulesProps) {
+function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired, initialChannel = 'CH1' }: ServerSchedulesProps) {
   const w = (ru: string, ky: string) => locale === 'ky' ? ky : ru;
   const stamp = (seconds: number) => new Date(seconds * 1000).toLocaleString(locale === 'ky' ? 'ky-KG' : 'ru-RU') + ' · ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [rows, setRows] = useState<ServerSchedule[]>([]);
-  const [channel, setChannel] = useState<'CH1' | 'CH2'>('CH1');
+  const [channel, setChannel] = useState<'CH1' | 'CH2'>(initialChannel);
   const [action, setAction] = useState<'on' | 'off'>('on');
   const [start, setStart] = useState('');
   const [duration, setDuration] = useState('30');
   const [preview, setPreview] = useState<ScheduleEvaluation | null>(null);
   const [previewKey, setPreviewKey] = useState('');
+  const [previewInput,setPreviewInput] = useState<ScheduleInput|null>(null);
+  const [previewZone,setPreviewZone] = useState('');
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState('');
   const [uncertain, setUncertain] = useState(false);
@@ -40,7 +45,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
   const expiredCallback = useRef(onSessionExpired);
   useEffect(() => { expiredCallback.current = onSessionExpired; }, [onSessionExpired]);
   const formKey = JSON.stringify([channel, action, start, duration]);
-  const canCreate = preview?.feasible && previewKey === formKey && !uncertain;
+  const canCreate = preview?.feasible && previewKey === formKey && previewInput!==null && previewZone===zone && !uncertain;
 
   useEffect(() => {
     const current = ++generation.current;
@@ -76,7 +81,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     }
   }
   function plan(): ScheduleInput {
-    return scheduleFromForm({ channel, action, start, minutes: duration });
+    return scheduleFromForm({ channel, action, start: localStartToUtc(start), minutes: duration });
   }
   async function reload(current = generation.current) {
     const value = await api.list(controllerId);
@@ -92,7 +97,9 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     completed: w('Завершено симулятором', 'Симулятор аяктады'), cancelled: w('Отменено', 'Жокко чыгарылды'),
     rejected: w('Отклонено', 'Четке кагылды'), uncertain: w('Результат неясен', 'Жыйынтык белгисиз'),
     protected_channel: w('CH3 защищён.', 'CH3 корголгон.'),
-    invalid_schedule: w('Введите дату UTC вида 2026-10-28T14:00:00Z и длительность от 1 секунды до 7 суток.', 'UTC күнүн 2026-10-28T14:00:00Z түрүндө жана 1 секунддан 7 күнгө чейинки узактыкты киргизиңиз.'),
+    timezone_changed: w('Часовой пояс изменился. Проверьте окно заново перед созданием.', 'Убакыт алкагы өзгөрдү. Түзүүдөн мурда убакытты кайра текшериңиз.'),
+    invalid_local_time: w('Введите ДД.ММ.ГГГГ ЧЧ:ММ. Несуществующее или повторяющееся время при смене часового пояса не принимается.', 'КК.АА.ЖЖЖЖ СС:ММ киргизиңиз. Убакыт алкагы өзгөргөндө жок же кайталанган убакыт кабыл алынбайт.'),
+    invalid_schedule: w('Проверьте начало и длительность: от 1 секунды до 7 суток.', 'Башталышын жана узактыгын текшериңиз: 1 секунддан 7 күнгө чейин.'),
     stale_measurements: w('Измерения устарели. Обновите телеметрию симулятора отдельно.', 'Өлчөөлөр эскирди. Симулятордун телеметриясын өзүнчө жаңыртыңыз.'),
     automation_not_allowed: w('Владелец ещё не разрешил автоматизацию канала.', 'Ээси каналды автоматташтырууга уруксат бере элек.'),
     manual_priority_active: w('Действует ручной приоритет.', 'Кол артыкчылыгы иштеп жатат.'),
@@ -115,9 +122,9 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
   const explain = (code: string) => labels[code] ?? w('Сервер отклонил действие. Обновите состояние и проверьте условия.', 'Сервер аракетти четке какты. Абалды жаңыртып, шарттарды текшериңиз.');
 
   return <Panel style={{ gap: 12 }}>
-    <Copy size={22}>{w('Расписания на сервере', 'Сервердеги графиктер')}</Copy>
+    <Copy size={22}>{w('Новое расписание', 'Жаңы график')}</Copy>
     <Copy muted>{w('Только серверный симулятор. CH3 защищён. Запрос команды не означает её исполнение.', 'Сервердик симулятор гана. CH3 корголгон. Буйрукту суроо анын аткарылышын билдирбейт.')}</Copy>
-    <Copy muted>{w('Введите время UTC. Сервер проверит свои часы, свежесть измерений и разрешение автоматизации.', 'UTC убактысын киргизиңиз. Сервер өз саатын, өлчөөнүн жаңылыгын жана уруксатты текшерет.')}</Copy>
+    <Copy muted>{w('Выберите местное время. Перед сохранением сервер проверит лимит мощности и разрешения.', 'Жергиликтүү убакытты тандаңыз. Сактоодон мурда сервер кубат чегин жана уруксаттарды текшерет.')}</Copy>
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
       {(['CH1', 'CH2'] as const).map(id => <CTA key={id} label={id} secondary={channel !== id} disabled={busy} onPress={() => setChannel(id)} />)}
     </View>
@@ -125,17 +132,26 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
       <CTA label={w('Включить на время', 'Убактылуу күйгүзүү')} secondary={action !== 'on'} disabled={busy} onPress={() => setAction('on')} />
       <CTA label={w('Выключить в указанное время', 'Белгиленген убакта өчүрүү')} secondary={action !== 'off'} disabled={busy} onPress={() => setAction('off')} />
     </View>
-    <Copy>{w('Начало, UTC', 'Башталышы, UTC')}</Copy>
-    <TextInput style={sty.field} accessibilityLabel={w('Начало расписания UTC', 'Графиктин башталышы UTC')} value={start} onChangeText={setStart} editable={!busy}
-      autoCapitalize="characters" autoCorrect={false} placeholder="2026-10-28T14:00:00Z" placeholderTextColor={theme.muted} maxLength={24} />
+    <Copy>{w('Начало по местному времени', 'Жергиликтүү убакыт боюнча башталышы')}</Copy>
+    <Copy muted size={14}>{Intl.DateTimeFormat().resolvedOptions().timeZone} · {w('ДД.ММ.ГГГГ ЧЧ:ММ', 'КК.АА.ЖЖЖЖ СС:ММ')}</Copy>
+    <TextInput style={sty.field} accessibilityLabel={w('Начало расписания по местному времени', 'Графиктин жергиликтүү убакыт боюнча башталышы')} value={start} onChangeText={setStart} editable={!busy}
+      autoCapitalize="none" autoCorrect={false} placeholder="29.10.2026 20:30" placeholderTextColor={theme.muted} maxLength={16} />
+    <View style={{flexDirection:'row',gap:8,flexWrap:'wrap'}}>
+      {[15,60].map(minutes=><CTA key={minutes} secondary disabled={busy} label={minutes===15?w('Через 15 мин', '15 мүнөттөн кийин'):w('Через час', 'Бир сааттан кийин')} onPress={()=>setStart(formatLocalStart(new Date(Date.now()+minutes*60000)))}/>)}
+    </View>
     {action === 'on' && <><Copy>{w('Длительность, минуты (до 7 суток)', 'Узактыгы, мүнөт (7 күнгө чейин)')}</Copy>
       <TextInput style={sty.field} accessibilityLabel={w('Длительность в минутах', 'Узактыгы мүнөт менен')} value={duration} onChangeText={setDuration}
         editable={!busy} keyboardType="decimal-pad" maxLength={12} /></>}
     <CTA label={w('Проверить окно', 'Убакытты текшерүү')} secondary disabled={busy || uncertain} onPress={() => void perform(async () => {
-      const current = generation.current, key = formKey, result = await api.evaluate(controllerId, plan());
-      if (generation.current === current) { setPreview(result); setPreviewKey(key); }
+      const current = generation.current, key = formKey, input = plan(), evaluatedZone = zone;
+      const result = await api.evaluate(controllerId, input);
+      if (generation.current === current) { setPreview(result); setPreviewKey(key); setPreviewInput(input); setPreviewZone(evaluatedZone); }
     })} />
-    {preview && previewKey === formKey && <View style={{ gap: 6 }}>
+    {preview && previewKey === formKey && <View style={{ gap: 8, padding:16, borderRadius:16, backgroundColor:theme.raised }}>
+      <Copy size={18}>{w('Проверьте перед созданием', 'Түзүүдөн мурда текшериңиз')}</Copy>
+      <Copy>{channel} · {start} · {previewZone}</Copy>
+      <Copy muted size={14}>{w('Передадим серверу', 'Серверге жөнөтүлөт')}: {previewInput?new Date(previewInput.start_at*1000).toISOString():"—"}</Copy>
+      {previewZone!==zone&&<Copy style={{color:theme.error}}>{explain("timezone_changed")}</Copy>}
       <Copy accent={preview.feasible}>{preview.feasible ? w('Окно допустимо сейчас. При исполнении условия проверяются снова.', 'Убакыт азыр жарактуу. Аткарууда шарттар кайра текшерилет.') : w('Окно отклонено.', 'Убакыт четке кагылды.')}</Copy>
       {preview.checks.filter(c => !c.ok).map(c => <Copy key={c.code}>{explain(c.code)}</Copy>)}
       {preview.projection && <Copy muted>{w('Прогноз пика', 'Чокунун божомолу')}: {preview.projection.projected_peak_watts} W · {w('Энергия нагрузки', 'Жүктүн энергиясы')}: {preview.projection.device_energy_wh} Wh</Copy>}
@@ -143,7 +159,8 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     </View>}
     <CTA label={w('Подтвердить создание расписания', 'График түзүүнү ырастоо')} disabled={busy || !canCreate} onPress={() => void perform(async () => {
       const current = generation.current;
-      await api.create(controllerId, plan());
+      if(!previewInput||previewZone!==Intl.DateTimeFormat().resolvedOptions().timeZone)throw new ApiError('timezone_changed');
+      await api.create(controllerId, previewInput);
       if (generation.current === current) setPreview(null);
       await changed(current);
     }, true)} />
@@ -151,12 +168,13 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     {error ? <Copy accessibilityRole="alert" style={{ color: theme.error }}>{explain(error)}</Copy> : null}
     {busy && <ActivityIndicator color={theme.peach} accessibilityLabel={w('Загрузка расписаний', 'Графиктер жүктөлүүдө')} />}
     <CTA label={w('Обновить список', 'Тизмени жаңыртуу')} secondary disabled={busy} onPress={() => void perform(reload)} />
+    <Copy size={20}>{w('Сохранённые расписания', 'Сакталган графиктер')}</Copy>
     <Copy muted>{w('Последние 100 записей. Время сервера показано в вашем часовом поясе.', 'Акыркы 100 жазуу. Сервердин убактысы сиздин убакыт алкагыңызда көрсөтүлгөн.')}</Copy>
     {!busy && !rows.length && <Copy muted>{w('Сохранённых расписаний нет.', 'Сакталган график жок.')}</Copy>}
     {rows.map(row => <View key={row.id} style={{ borderTopWidth: 1, borderColor: theme.line, paddingTop: 12, gap: 7 }}>
       <Copy>{row.channel_id} · {row.action === 'on' ? w('Включить', 'Күйгүзүү') : w('Выключить', 'Өчүрүү')} · {labels[row.status]}</Copy>
-      <Copy size={13}>{stamp(row.start_at)}{row.action === 'on' ? '\n→ ' + stamp(row.end_at) : ''}</Copy>
-      <Copy size={12} muted>{w('Обновлено сервером', 'Сервер жаңыртты')}: {stamp(row.updated_at)}</Copy>
+      <Copy size={15}>{stamp(row.start_at)}{row.action === 'on' ? '\n→ ' + stamp(row.end_at) : ''}</Copy>
+      <Copy size={14} muted>{w('Обновлено сервером', 'Сервер жаңыртты')}: {stamp(row.updated_at)}</Copy>
       {row.rejection_reason && <Copy>{explain(row.rejection_reason.replace(/^end_phase_/, ''))}</Copy>}
       {active(row) && (cancelId === row.id ? <View style={{ gap: 8 }}>
         <Copy>{w('Отмена убирает будущие фазы и ещё не отправленный запрос. Уже включённая нагрузка останется включённой; выключите её отдельной командой.', 'Жокко чыгаруу келечектеги кадамдарды жана жөнөтүлө элек суроону алып салат. Күйгөн жүк күйүп калат; өзүнчө буйрук менен өчүрүңүз.')}</Copy>

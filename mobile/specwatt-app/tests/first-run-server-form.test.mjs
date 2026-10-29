@@ -15,7 +15,7 @@ function mount(locale){
   'react-native-safe-area-context':{SafeAreaView:'Safe'},'expo-router':{router:{}},
   '../specwatt/live-context':{defaultServerUrl:()=> 'http://localhost:8000',useLive:()=>({workspace:{},state:{client:null,controllers:[],busy:false,error:''}})},'../specwatt/api':api,'../specwatt/ui':{Copy:'Copy',CTA:'CTA',Panel:'Panel'},
   '../specwatt/theme':{theme:{},sty:{}},'../specwatt/store':{useSpec:()=>({data:{locale}})},
-  './server-schedules':{},'../specwatt/server-request-scope':scope,'../specwatt/i18n':{t}};
+  './live-controls':{Details:'Details'},'./server-schedules':{},'../specwatt/server-request-scope':scope,'../specwatt/i18n':{t}};
  const exports={};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/screens/server.tsx',import.meta.url),'utf8'),{compilerOptions:{jsx:ts.JsxEmit.React,module:ts.ModuleKind.CommonJS,esModuleInterop:true}}).outputText,{exports,require:n=>{if(!mocks[n])throw Error(n);return mocks[n];},__DEV__:true});
  const flatten=n=>!n||typeof n!=='object'?[]:Array.isArray(n)?n.flatMap(flatten):[n,...flatten(n.props?.children)];
