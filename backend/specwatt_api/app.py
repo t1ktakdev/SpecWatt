@@ -23,6 +23,7 @@ from pydantic import Field, field_validator, model_validator
 
 from .base import CHANNELS, FRESH_SECONDS, Input
 from .clock import SystemClock
+from .usb_diagnostics import read_host_bridge_status
 
 SESSION_SECONDS = 86400
 
@@ -432,6 +433,22 @@ def create_app(database_path: str | Path | None = None, clock=None, *,
     def get_snapshot(cid: str, uid=Depends(user)):
         with connect(path) as db:
             return snapshot(db, owned(db, cid, uid), clock.now())
+
+    @app.get('/v1/controllers/{cid}/diagnostics/usb-bridge')
+    def usb_bridge_diagnostics(request: Request, cid: str, uid=Depends(user)):
+        # Fail closed for remote peers even if Brain is accidentally exposed.
+        # Ignore spoofable forwarded headers. Unpaired diagnostic, not hardware.
+        if request.client is None or request.client.host not in ('127.0.0.1', '::1'):
+            raise HTTPException(404, detail={'code': 'not_found'})
+        with connect(path) as db:
+            owned(db, cid, uid)
+        state = read_host_bridge_status(os.environ.get('SPECWATT_USB_BRIDGE_STATUS'))
+        return {
+            'controller_id': cid, 'controller_source': 'simulator',
+            'paired': False, 'hardware_transport': False,
+            'source': 'diagnostic', 'measured': False,
+            'host_bridge': state,
+        }
 
     @app.patch('/v1/controllers/{cid}/settings')
     def settings(cid: str, payload: SettingsInput, uid=Depends(user)):
