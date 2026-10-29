@@ -5,7 +5,7 @@ export type PowerSample = {
   at: number;
   watts: number | null;
   freshness: "fresh" | "stale" | "missing";
-  source: "demo" | "measured" | "forecast";
+  source: "demo" | "measured" | "forecast" | "simulator";
 };
 export type EnergySummary = {
   observedWh: number;
@@ -50,7 +50,7 @@ export function integratePower(
       !finite(s.at) ||
       s.at < 0 ||
       s.at <= previous ||
-      !["demo", "measured", "forecast"].includes(s.source) ||
+      !["demo", "measured", "forecast", "simulator"].includes(s.source) ||
       s.source !== source ||
       !["fresh", "stale", "missing"].includes(s.freshness) ||
       !(

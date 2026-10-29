@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BrainClient, ApiError } from '../src/specwatt/api.ts';
+import { BrainClient, ApiError, parseSnapshot } from '../src/specwatt/api.ts';
 import { createLiveWorkspace } from '../src/specwatt/live-workspace.ts';
 
 const snapshot = (id='a') => ({controller_id:id,name:id,source:'simulator',measured_at:100,freshness:'fresh',total_watts:4.2,peak_watts:7,
@@ -80,4 +80,9 @@ test('accepted requested record stays visible if following history GET fails',as
  client.command=async()=>({id:'accepted',controller_id:'a',channel_id:'CH1',status:'requested',on:false,transitions:[]});
  client.commands=async()=>{throw new ApiError('network_error');};await w.command('CH1',false);
  assert.equal(w.getState().commands[0]?.id,'accepted');assert.equal(w.getState().commands[0]?.status,'requested');
+});
+test('server snapshot retains actual manual priority and per-channel hold for scheduler views',()=>{
+ const raw={...snapshot(),manual_priority_minutes:30};raw.channels[0].manual_until=250;
+ const parsed=parseSnapshot(raw);assert.equal(parsed.manual_priority_minutes,30);assert.equal(parsed.channels[0].manual_until,250);
+ for(const invalid of [-1,NaN,Infinity]){raw.channels[0].manual_until=invalid;assert.throws(()=>parseSnapshot(raw),e=>e.code==='invalid_response');}
 });

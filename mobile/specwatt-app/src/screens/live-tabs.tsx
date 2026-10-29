@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, View, StyleSheet } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import Svg, { Circle, Line, Path } from "react-native-svg";
@@ -11,6 +11,8 @@ import { theme } from "../specwatt/theme";
 import { isSnapshotFresh, blocksNewCommands } from "../specwatt/server-request-scope";
 import type { ServerChannel, ServerMeasurement } from "../specwatt/api";
 import type { Assign, Locale } from "../specwatt/model";
+import ServerSchedules from "./server-schedules";
+import { serverPowerHistory } from "../specwatt/live-history";
 
 export type LiveTab = "home" | "devices" | "journal" | "autopilot" | "plan" | "device";
 const titles: Record<LiveTab,[string,string]> = {home:["Обзор энергии","Энергияга сереп"], devices:["Устройства","Түзмөктөр"], journal:["Журнал","Журнал"],autopilot:["Автопилот","Автопилот"],plan:["План","План"],device:["Канал контроллера","Контроллердин каналы"]};
@@ -25,6 +27,7 @@ export function LiveTabScreen({tab}:{tab:LiveTab}) {
   const locale=data.locale,w=(ru:string,ky:string)=>locale==="ky"?ky:ru;
   const [now,setNow]=useState(Date.now),[filter,setFilter]=useState("all");
   const {id}=useLocalSearchParams<{id:string}>();
+  const scheduler=useMemo(()=>state.client?.scheduler()??null,[state.client]);
   useLivePolling();
   useEffect(()=>{if(!state.snapshot)return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[state.snapshot]);
   const snapshot=state.snapshot;
@@ -53,6 +56,12 @@ export function LiveTabScreen({tab}:{tab:LiveTab}) {
         {tab==="home"&&<Copy muted size={14}>{w("Покрытие", "Камтуу")}: {fresh?snapshot.channels.filter(ch=>ch.watts!==null).length:0}/3 · {w("Предел", "Чек")} {number(snapshot.peak_watts,locale)} {w("Вт", "Вт")}</Copy>}
       </Panel>}
       {tab==="home"&&<PowerHistory rows={state.measurements} locale={locale}/>}
+      {tab==="autopilot"&&<>
+        <Panel style={{gap:12,backgroundColor:theme.raised}}><Copy size={22}>{w("Правила управления", "Башкаруунун эрежелери")}</Copy><Copy muted>{w("Сервер проверяет каждую команду. Общего переключателя автопилота в API нет; расписания создаются отдельно в Плане.", "Сервер ар бир буйрукту текшерет. APIде жалпы автопилот которгучу жок; графиктер Планда өзүнчө түзүлөт.")}</Copy><Copy>{w("Предел мощности", "Кубат чеги")}: {number(snapshot.peak_watts,locale)} {w("Вт", "Вт")}</Copy><Copy>{w("Ручной приоритет", "Кол артыкчылыгы")}: {snapshot.manual_priority_minutes??"—"} {w("мин", "мүн")}</Copy></Panel>
+        {snapshot.channels.map(ch=><Panel key={ch.id} style={{gap:12}}><Copy size={19}>{ch.id} · {ch.assigned.name}</Copy>{ch.protected?<Copy accent>{w("Защищён · исключён из расписаний", "Корголгон · графиктерге кирбейт")}</Copy>:<><Copy>{ch.assigned.allow_auto?w("Автоматизация разрешена владельцем", "Ээси автоматташтырууга уруксат берди"):w("Разрешение автоматизации не дано", "Автоматташтырууга уруксат берилген жок")}</Copy><Copy muted size={14}>{ch.manual_until===undefined?w("Ручной приоритет неизвестен", "Кол артыкчылыгы белгисиз"):ch.manual_until>now/1000?`${w("Ручной приоритет до", "Кол артыкчылыгы")} ${stamp(ch.manual_until,locale)}`:w("Активного ручного приоритета нет", "Активдүү кол артыкчылыгы жок")}</Copy><CTA secondary disabled={state.busy||state.refreshing||waiting} label={ch.assigned.allow_auto?w("Запретить автоматизацию", "Автоматташтырууга тыюу салуу"):w("Разрешить автоматизацию", "Автоматташтырууга уруксат берүү")} onPress={()=>void workspace.consent(ch.id,!ch.assigned.allow_auto)}/></>}</Panel>)}
+        <CTA label={w("Открыть План", "Планды ачуу")} onPress={()=>router.replace("/plan")}/>
+      </>}
+      {tab==="plan"&&scheduler&&<><Panel style={{gap:8,backgroundColor:theme.raised}}><Copy size={22}>{w("Прогноз → запрос → наблюдение", "Божомол → суроо → байкоо")}</Copy><Copy muted>{w("Оценка сервера не означает исполнение. Создание расписания требует отдельного подтверждения. CH3 исключён.", "Сервердин баалоосу аткарууну билдирбейт. Графикти түзүү үчүн өзүнчө ырастоо керек. CH3 кирбейт.")}</Copy></Panel><ServerSchedules key={snapshot.controller_id} api={scheduler} controllerId={snapshot.controller_id} locale={locale} onChanged={()=>{if(workspace.getState().client===state.client&&workspace.getState().selectedId===snapshot.controller_id)return workspace.refresh();}} onSessionExpired={()=>{if(workspace.getState().client===state.client)workspace.expire();}}/></>}
       {(tab==="home"||tab==="devices"||tab==="device")&&<>
         {tab==="home"&&<Copy size={21}>{w("Каналы контроллера", "Контроллердин каналдары")}</Copy>}
         {snapshot.channels.filter(ch=>tab!=="device"||ch.id===id).map(channel=><Panel key={channel.id} style={{gap:16}}>
@@ -82,8 +91,8 @@ export function LiveTabScreen({tab}:{tab:LiveTab}) {
         <Copy size={21}>{w("События сервера", "Сервердин окуялары")}</Copy>
         <View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{[["all","Все","Баары"],["manual","Ручные","Кол менен"],["autopilot","Автопилот","Автопилот"],["errors","Ошибки","Каталар"]].map(([key,ru,ky])=><Pressable key={key} accessibilityRole="button" accessibilityState={{selected:filter===key}} style={[s.filter,filter===key&&{borderColor:theme.peach}]} onPress={()=>setFilter(key)}><Copy size={14}>{w(ru,ky)}</Copy></Pressable>)}</View>
         <Copy muted size={14}>{w("SIMULATOR · события по порядку получения. Время местное. Последние 500 записей.", "SIMULATOR · окуялар алуу тартибинде. Жергиликтүү убакыт. Акыркы 500 жазуу.")}</Copy>
-        {state.events.filter(e=>eventMatches(e.kind,filter)).length===0&&<Panel><Copy muted>{w("Нет событий для этого фильтра", "Бул чыпкада окуя жок")}</Copy></Panel>}
-        {[...state.events].reverse().filter(e=>eventMatches(e.kind,filter)).map(event=><Panel key={event.sequence} style={{gap:8}}><Copy>{eventTitle(event.kind,locale)}{event.channel_id?` · ${event.channel_id}`:""}</Copy><Copy muted size={14}>{stamp(event.created_at,locale)} · #{event.sequence} · SIMULATOR</Copy>{!!event.reason&&<Copy muted size={14}>{errorText(event.reason,locale)}</Copy>}{!!event.command_id&&<Copy muted size={14}>{event.command_id}</Copy>}</Panel>)}
+        {state.events.filter(e=>eventMatches(e.kind,filter,state.commands.find(c=>c.id===e.command_id)?.origin)).length===0&&<Panel><Copy muted>{w("Нет событий для этого фильтра", "Бул чыпкада окуя жок")}</Copy></Panel>}
+        {[...state.events].reverse().filter(e=>eventMatches(e.kind,filter,state.commands.find(c=>c.id===e.command_id)?.origin)).map(event=><Panel key={event.sequence} style={{gap:8}}><Copy>{eventTitle(event.kind,locale)}{event.channel_id?` · ${event.channel_id}`:""}</Copy><Copy muted size={14}>{stamp(event.created_at,locale)} · #{event.sequence} · SIMULATOR</Copy>{!!event.reason&&<Copy muted size={14}>{errorText(event.reason,locale)}</Copy>}{!!event.command_id&&<Copy muted size={14}>{event.command_id}</Copy>}</Panel>)}
         <CTA secondary disabled={state.refreshing} label={w("Загрузить следующие события", "Кийинки окуяларды жүктөө")} onPress={()=>void workspace.refresh()}/>
       </>}
       {(tab==="devices"||tab==="device")&&<Panel style={{gap:12,backgroundColor:theme.raised}}>
@@ -104,25 +113,29 @@ function assignment(ch:ServerChannel):Assign {
   return {name:ch.assigned.name,room:ch.assigned.room,image,category:image,allowAuto:ch.assigned.allow_auto};
 }
 function channelWatts(ch:ServerChannel|undefined,locale:Locale) {return ch?.watts===null||!ch?"—":number(ch.watts,locale);}
-function eventMatches(kind:string,filter:string) {return filter==="all"||(filter==="errors"?/reject|timeout|error|fail/.test(kind):filter==="autopilot"?/schedule|auto/.test(kind):/command|manual/.test(kind));}
+function eventMatches(kind:string,filter:string,origin?:string) {return filter==="all"||(filter==="errors"?/reject|timeout|error|fail/.test(kind):filter==="autopilot"?/schedule|auto/.test(kind)||origin==="schedule"||origin==="autopilot":origin==="manual");}
 function eventTitle(kind:string,locale:Locale) {
-  const labels:Record<string,[string,string]>={controller_created:["Контроллер создан","Контроллер түзүлдү"],telemetry:["Получен образец","Үлгү алынды"],command_requested:["Команда запрошена","Буйрук суралды"],command_sent:["Команда отправлена","Буйрук жөнөтүлдү"],command_acknowledged:["Подтверждение симулятора","Симулятордун ырастоосу"],command_rejected:["Команда отклонена","Буйрук четке кагылды"]};
+  const labels:Record<string,[string,string]>={"simulator.created":["Контроллер создан","Контроллер түзүлдү"],"telemetry.simulated":["Получен образец","Үлгү алынды"],"command.requested":["Команда запрошена","Буйрук суралды"],"command.sent":["Команда отправлена","Буйрук жөнөтүлдү"],"command.acknowledged":["Подтверждение симулятора","Симулятордун ырастоосу"],"command.rejected":["Команда отклонена","Буйрук четке кагылды"],"assignment.updated":["Разрешения и назначение обновлены","Уруксаттар жана дайындоо жаңыртылды"]};
   return labels[kind]?.[locale==="ky"?1:0]??kind;
 }
 function errorText(code:string,locale:Locale) {
   const w=(ru:string,ky:string)=>locale==="ky"?ky:ru;
   if(/401|session|authentication/.test(code))return w("Сеанс истёк. Войдите заново.", "Сеанс аяктады. Кайра кириңиз.");
   if(/network|timeout/.test(code))return w("Нет ответа сервера. Проверьте соединение; данные могут быть устаревшими.", "Серверден жооп жок. Байланышты текшериңиз; маалымат эски болушу мүмкүн.");
+  if(/429|rate_limited/.test(code))return w("Слишком много запросов. Подождите минуту и обновите данные.", "Суроо өтө көп. Бир мүнөт күтүп, маалыматты жаңыртыңыз.");
+  if(/404|403|not_found/.test(code))return w("Объект недоступен или удалён. Выберите контроллер заново.", "Объект жеткиликсиз же өчүрүлгөн. Контроллерди кайра тандаңыз.");
+  if(/^http_5|server_busy/.test(code))return w("Сервер временно недоступен. Команды автоматически не повторяются.", "Сервер убактылуу жеткиликсиз. Буйруктар автоматтык кайталанбайт.");
   const labels:Record<string,[string,string]>={stale_measurements:["Нет свежего измерения. Создайте образец симулятора явно.","Жаңы өлчөө жок. Симулятордун үлгүсүн түзүңүз."],protected_channel:["CH3 защищён. Управление запрещено.","CH3 корголгон. Башкарууга тыюу салынат."],peak_exceeded:["Запрос превысит допустимый пик.","Суроо уруксат берилген чокудан ашат."],invalid_response:["Ответ сервера нарушает контракт. Данные не приняты.","Сервердин жообу келишимге туура келбейт. Маалымат кабыл алынган жок."],controller_not_found:["Контроллер удалён или недоступен. Выберите другой.","Контроллер өчүрүлгөн же жеткиликсиз. Башкасын тандаңыз."],simulator_confirmed:["Подтверждено серверным симулятором","Сервердик симулятор ырастады"]};
   return labels[code]?.[locale==="ky"?1:0]??w("Сервер сообщил: ", "Сервер билдирди: ")+code;
 }
 function PowerHistory({rows,locale}:{rows:ServerMeasurement[];locale:Locale}) {
   const w=(ru:string,ky:string)=>locale==="ky"?ky:ru;
-  const data=rows.slice(-30),start=data[0]?.measured_at??0,end=data.at(-1)?.measured_at??start;
-  const points=data.map(row=>({t:row.measured_at,p:row.channels.CH1+row.channels.CH2+row.channels.CH3}));
+  const history=serverPowerHistory(rows.slice(-30),Date.now()/1000);
+  const points=history.points.map(point=>({t:point.at/1000,p:point.watts!}));
+  const start=points[0]?.t??0,end=points.at(-1)?.t??start;
   const peak=Math.max(1,...points.map(point=>point.p));
   const x=(t:number)=>12+(t-start)/Math.max(1,end-start)*256,y=(p:number)=>108-p/peak*88;
-  const gap=points.some((point,i)=>i>0&&point.t-points[i-1].t>60);
+  const gap=history.hasGap;
   return <Panel style={{gap:12}}><Copy size={20}>{w("История мощности", "Кубаттын тарыхы")}</Copy><Copy muted size={14}>{w("Вт · образцы серверного симулятора", "Вт · сервердик симулятордун үлгүлөрү")}</Copy>
     {points.length<2?<Copy muted>{w("Нужно хотя бы два образца. История появится после явных действий симулятора.", "Кеминде эки үлгү керек. Тарых симулятордун аракеттеринен кийин чыгат.")}</Copy>:<>
       <Copy muted size={14}>{w("Пик в загруженной истории", "Жүктөлгөн тарыхтагы чоку")}: {number(peak,locale)} {w("Вт", "Вт")}</Copy>
@@ -133,6 +146,8 @@ function PowerHistory({rows,locale}:{rows:ServerMeasurement[];locale:Locale}) {
         </Svg>
       </View><Copy muted size={14}>{stamp(start,locale)} → {stamp(end,locale)} · 0–{number(peak,locale)} {w("Вт", "Вт")}</Copy>
       {gap&&<Copy>{w("Есть разрывы более 60 с. Они не соединены.", "60 секунддан чоң үзгүлтүк бар. Алар бириктирилген жок.")}</Copy>}
+      {history.summary.coveredMs>0&&<><Copy>{w("Оценка энергии симулятора", "Симулятордун энергия баалоосу")}: ≈ {history.summary.observedWh.toLocaleString(locale==="ky"?"ky-KG":"ru-RU",{maximumSignificantDigits:3})} Wh</Copy><Copy muted size={14}>{w("Трапецеидальная оценка только покрытых интервалов", "Камтылган аралыктардын гана трапециялык баалоосу")}: {Math.round(history.summary.coveredMs/1000)} {w("с", "с")} · {w("пропуски", "үзгүлтүк")}: {Math.round(history.summary.missingMs/1000)} {w("с", "с")}</Copy></>}
+      {history.ignored>0&&<Copy muted size={14}>{w("Неиспользованные образцы", "Колдонулбаган үлгүлөр")}: {history.ignored}</Copy>}
     </>}
   </Panel>;
 }

@@ -41,6 +41,7 @@ async function capture(page,name,locale,width,extra={}){
 async function register(page,locale){
  const ky=locale==='ky';
  await page.goto(web+'/server');
+ await capture(page,'signin',locale,page.viewportSize().width);
  await page.getByRole('textbox',{name:ky?'Сервердин дареги':'Адрес сервера',exact:true}).fill(base);
  await page.getByRole('button',{name:ky?'Катталуу':'Регистрация',exact:true}).click();
  await page.getByRole('textbox',{name:'Email',exact:true}).fill(account());
@@ -65,7 +66,7 @@ try{
  await stop();await start();await w.refresh();assert.equal(w.getState().snapshot.total_watts,2.4);checks.push('HTTP: workspace request → explicit simulator ACK, cursor history, restart persistence');
  await w.logout();assert.equal(w.getState().snapshot,null);assert.equal(w.getState().kind,'unconfigured');w.dispose();
  browser=await chromium.launch({channel:'msedge',headless:true});
- for(const locale of ['ru','ky'])for(const width of [320,393,440]){
+ for(const locale of (process.env.QA_LOCALES?.split(',')||['ru','ky']))for(const width of (process.env.QA_WIDTHS?.split(',').map(Number)||[320,393,440])){
   // Each matrix case owns a fresh process/rate-limit window, with the same
   // disposable SQLite persisted. This is test isolation, not a failed-call retry.
   await stop();await start();
@@ -90,7 +91,28 @@ try{
   await nav('Журнал');await page.getByText(ky?'Сервердин окуялары':'События сервера',{exact:true}).filter({visible:true}).waitFor();await capture(page,'journal',locale,width);
   for(const [tab,name]of [['autopilot','Автопилот'],['plan','План']]){await nav(name);await capture(page,tab,locale,width);}
   if(locale==='ru'&&width===393){
+   await nav('Устройства');await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
+   await nav('Автопилот');await page.getByRole('button',{name:'Разрешить автоматизацию',exact:true}).nth(1).click();
+   await page.getByRole('button',{name:'Запретить автоматизацию',exact:true}).waitFor();
+   await nav('План');await page.getByRole('button',{name:'CH2',exact:true}).click();
+   await page.getByRole('textbox',{name:'Начало расписания UTC',exact:true}).fill(new Date(Date.now()+300000).toISOString().replace(/\.\d{3}Z$/,'Z'));
+   await page.getByRole('textbox',{name:'Длительность в минутах',exact:true}).fill('1');
+   await page.getByRole('button',{name:'Проверить окно',exact:true}).click();
+   await page.getByText('Окно допустимо сейчас. При исполнении условия проверяются снова.',{exact:true}).filter({visible:true}).waitFor();
+   await capture(page,'plan-evaluated',locale,width);
+   await page.getByRole('button',{name:'Подтвердить создание расписания',exact:true}).click();
+   await page.getByRole('button',{name:'Отменить расписание',exact:true}).waitFor();await capture(page,'plan-created',locale,width);
+   await page.getByRole('button',{name:'Отменить расписание',exact:true}).click();await page.getByRole('button',{name:'Подтвердить отмену',exact:true}).click();
+   await page.getByRole('button',{name:'Отменить расписание',exact:true}).waitFor({state:'hidden'});await capture(page,'plan-cancelled',locale,width);
+   checks.push('WEB: main Autopilot consent → Plan evaluate → explicit create → explicit cancel');
    await nav('Устройства');
+   await page.getByRole('button',{name:'Создать образец симулятора',exact:true}).click();
+   await stop();await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();
+   await page.getByText('network_error',{exact:true}).filter({visible:true}).waitFor();
+   assert.equal(await page.getByRole('button',{name:'CH1 · Запросить включение',exact:true}).isDisabled(),true);
+   await capture(page,'offline',locale,width);await start();
+   await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();await page.getByText('Данные свежие',{exact:true}).filter({visible:true}).waitFor();
+   checks.push('WEB: stop server → unknown readings/control disabled → restart/reconnect');
    // Lost POST reply after actual server commit: one request, no optimistic ACK, GET reconciliation.
    let posts=0;
    await page.route('**/commands',async route=>{if(route.request().method()==='POST'){posts++;await route.fetch();await route.abort('failed');}else await route.continue();});
@@ -104,7 +126,18 @@ try{
    await page.route('**/snapshot',async route=>{if(!revoked){revoked=true;const token=route.request().headers().authorization;await fetch(base+'/v1/auth/logout',{method:'POST',headers:{Authorization:token}});}await route.continue();});
    await page.getByRole('button',{name:'Обновить данные сервера',exact:true}).click();await page.getByText('Нужен вход на сервер',{exact:true}).filter({visible:true}).waitFor();await capture(page,'expired-session',locale,width);assert.equal(await page.getByText('QA Energy Lab',{exact:true}).filter({visible:true}).count(),0);checks.push('WEB: real token revocation clears owner data on 401');
   }
-  assert.deepEqual(errors,[]);checks.push(`WEB ${locale} ${width}: register/create/main tabs/CH3/request/explicit ACK/journal`);
+  assert.equal((await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1'))).includes('QA Energy Lab'),false,'server state never persisted into DEMO');
+  if(!(locale==='ru'&&width===393)){
+   for(const scale of [1.3,1.5]){
+    const css=await page.addStyleTag({content:`[dir="auto"] {font-size:${scale*100}% !important; line-height:1.4 !important;}`});
+    for(const [name,label]of [['home',ky?'Башкы':'Главная'],['devices',ky?'Түзмөктөр':'Устройства'],['autopilot','Автопилот'],['plan','План'],['journal','Журнал']]){await nav(label);await capture(page,`${name}-text-${scale}`,locale,width,{fontScale:`WEB text CSS ${scale*100}%; not native fontScale`});}
+    await css.evaluate(n=>n.remove());
+   }
+  }
+  await page.getByRole('button',{name:ky?'DEMO режимине өтүү':'Перейти в DEMO',exact:true}).click();
+  assert.equal(await page.getByText('СЕРВЕР · СИМУЛЯЦИЯ',{exact:true}).filter({visible:true}).count(),0);
+  assert.equal(JSON.parse(await page.evaluate(()=>localStorage.getItem('specwatt-mobile-v1'))).source,'demo');
+  assert.deepEqual(errors,[]);checks.push(`WEB ${locale} ${width}: register/create/main tabs/CH3/request/explicit ACK/journal/source switch`);
   await context.close();
  }
  console.log(JSON.stringify({checks,captures:manifest.length},null,2));

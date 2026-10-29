@@ -14,7 +14,6 @@ export type ServerSchedulesProps = {
   onChanged: () => void | Promise<void>;
   onSessionExpired: () => void;
 };
-const stamp = (seconds: number) => new Date(seconds * 1000).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
 const active = (row: ServerSchedule) => ['pending', 'running', 'uncertain'].includes(row.status);
 
 /** Server records only. No offline planner, device acknowledgement or automatic tick. */
@@ -24,6 +23,7 @@ export default function ServerSchedules(props: ServerSchedulesProps) {
 
 function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired }: ServerSchedulesProps) {
   const w = (ru: string, ky: string) => locale === 'ky' ? ky : ru;
+  const stamp = (seconds: number) => new Date(seconds * 1000).toLocaleString(locale === 'ky' ? 'ky-KG' : 'ru-RU') + ' · ' + Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [rows, setRows] = useState<ServerSchedule[]>([]);
   const [channel, setChannel] = useState<'CH1' | 'CH2'>('CH1');
   const [action, setAction] = useState<'on' | 'off'>('on');
@@ -141,7 +141,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
       {preview.projection && <Copy muted>{w('Прогноз пика', 'Чокунун божомолу')}: {preview.projection.projected_peak_watts} W · {w('Энергия нагрузки', 'Жүктүн энергиясы')}: {preview.projection.device_energy_wh} Wh</Copy>}
       {preview.suggestions.map(s => <Copy key={s.start_at} muted>{w('Другое окно', 'Башка убакыт')}: {stamp(s.start_at)} — {stamp(s.end_at)}</Copy>)}
     </View>}
-    <CTA label={w('Сохранить на сервере', 'Серверге сактоо')} disabled={busy || !canCreate} onPress={() => void perform(async () => {
+    <CTA label={w('Подтвердить создание расписания', 'График түзүүнү ырастоо')} disabled={busy || !canCreate} onPress={() => void perform(async () => {
       const current = generation.current;
       await api.create(controllerId, plan());
       if (generation.current === current) setPreview(null);
@@ -151,7 +151,7 @@ function SchedulePanel({ api, controllerId, locale, onChanged, onSessionExpired 
     {error ? <Copy accessibilityRole="alert" style={{ color: theme.error }}>{explain(error)}</Copy> : null}
     {busy && <ActivityIndicator color={theme.peach} accessibilityLabel={w('Загрузка расписаний', 'Графиктер жүктөлүүдө')} />}
     <CTA label={w('Обновить список', 'Тизмени жаңыртуу')} secondary disabled={busy} onPress={() => void perform(reload)} />
-    <Copy muted>{w('Последние 100 записей. Время ниже получено от сервера, UTC.', 'Акыркы 100 жазуу. Төмөнкү убакыт серверден алынган, UTC.')}</Copy>
+    <Copy muted>{w('Последние 100 записей. Время сервера показано в вашем часовом поясе.', 'Акыркы 100 жазуу. Сервердин убактысы сиздин убакыт алкагыңызда көрсөтүлгөн.')}</Copy>
     {!busy && !rows.length && <Copy muted>{w('Сохранённых расписаний нет.', 'Сакталган график жок.')}</Copy>}
     {rows.map(row => <View key={row.id} style={{ borderTopWidth: 1, borderColor: theme.line, paddingTop: 12, gap: 7 }}>
       <Copy>{row.channel_id} · {row.action === 'on' ? w('Включить', 'Күйгүзүү') : w('Выключить', 'Өчүрүү')} · {labels[row.status]}</Copy>

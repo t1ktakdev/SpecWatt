@@ -69,6 +69,7 @@ export type ServerChannel = {
   watts: number | null;
   last_known_watts: number;
   freshness: "fresh" | "stale";
+  manual_until?: number;
   assigned: { name: string; room: string; image: string; allow_auto: boolean };
 };
 export type ServerSnapshot = {
@@ -80,6 +81,7 @@ export type ServerSnapshot = {
   freshness: "fresh" | "stale";
   total_watts: number | null;
   peak_watts: number;
+  manual_priority_minutes?: number;
   channels: ServerChannel[];
 };
 export function parseSnapshot(value: unknown): ServerSnapshot {
@@ -119,6 +121,7 @@ export function parseSnapshot(value: unknown): ServerSnapshot {
       watts,
       last_known_watts: last,
       freshness: ch.freshness as ServerChannel["freshness"],
+      ...(ch.manual_until === undefined ? {} : {manual_until:number(ch.manual_until)}),
       assigned: {
         name: string(assigned.name, 80),
         room: assigned.room,
@@ -146,10 +149,12 @@ export function parseSnapshot(value: unknown): ServerSnapshot {
     freshness: item.freshness as ServerSnapshot["freshness"],
     total_watts: total,
     peak_watts: number(item.peak_watts),
+    ...(item.manual_priority_minutes === undefined ? {} : {manual_priority_minutes:number(item.manual_priority_minutes)}),
     channels,
   };
 }
 export type ServerCommand = {
+  origin?: "manual" | "autopilot" | "schedule";
   id: string;
   controller_id: string;
   channel_id: ServerChannel["id"];
@@ -206,11 +211,13 @@ function parseCommand(value: unknown): ServerCommand {
       "reconciled",
     ].includes(item.status as string) ||
     typeof item.on !== "boolean" ||
+    (item.origin !== undefined && !["manual","autopilot","schedule"].includes(item.origin as string)) ||
     !Array.isArray(item.transitions) ||
     item.transitions.length > 20
   )
     throw new ApiError("invalid_response");
   return {
+    ...(item.origin === undefined ? {} : {origin:item.origin as ServerCommand["origin"]}),
     id: string(item.id, 128),
     controller_id: string(item.controller_id, 128),
     channel_id: item.channel_id as ServerChannel["id"],
