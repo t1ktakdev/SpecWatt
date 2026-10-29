@@ -13,7 +13,7 @@ const results=[];
 try {
  for(const [locale,route,word,fixture] of [
   ['ru','/autopilot','Выключен',demoState('ru')],
-  ['ky','/','башкарыңыз.',{...emptyState(),locale:'ky'}],
+  ['ky','/','түшүнүңүз',{...emptyState(),locale:'ky'}],
  ]) {
   const context=await browser.newContext({viewport:{width:320,height:852},reducedMotion:'reduce'});
   const page=await context.newPage();

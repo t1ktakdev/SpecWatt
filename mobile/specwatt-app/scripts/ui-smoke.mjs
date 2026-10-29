@@ -15,7 +15,7 @@ try {
   page.on('pageerror',e=>errors.push(String(e)));
   page.on('request',r=>{if(/\/(?:api|v1)\//.test(r.url()))requests.push(r.url());});
   await page.goto(qaBaseUrl+'/');
-  await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
+  await page.getByRole('button',{name:t('ru','introSkip'),exact:true}).click();
   await page.getByRole('button',{name:locale==='ru'?'Русский':'Кыргызча',exact:true}).click();
   await page.getByRole('button',{name:t(locale,'next'),exact:true}).click();
   await page.getByRole('button',{name:t(locale,'demo'),exact:true}).click();
@@ -65,7 +65,7 @@ try {
  // A separate profile proves the empty onboarding route without erasing user data.
  const context=await browser.newContext({viewport:{width:320,height:700}}),page=await context.newPage();
  await page.goto(qaBaseUrl+'/');
- await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
+ await page.getByRole('button',{name:t('ru','introSkip'),exact:true}).click();
  await page.getByRole('button',{name:t('ru','next'),exact:true}).click();
  await page.getByRole('button',{name:t('ru','empty'),exact:true}).click();
  await page.getByText('Нет подключённых каналов',{exact:true}).waitFor();
